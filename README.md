@@ -50,9 +50,19 @@ m.datacollector.get_model_vars_dataframe() # hourly community flows
 m.household_table()                        # per-household annual results
 ```
 
-Current model: households, local sharing at a fixed price, grid exchange.
-Batteries, other pricing mechanisms, demand response, outages and membership
-are added in later steps. Tariffs are placeholders (0.20 / 0.05 EUR/kWh).
+Scenario options (see `Community.__init__` in `model/model.py`):
+`pricing` (`none`, `fixed`, `mid_market`, `sdr`, `bill_sharing`),
+`storage_mode` (`none`, `shared`, `individual`) with `storage_kwh`,
+`flexibility` (demand response, 0-0.2) and `outage_rate` (outages per year).
+For example: `python -m experiments.run_baseline --pricing sdr --storage-mode shared --storage-kwh 100`.
+
+Not implemented yet: membership change (ODD 7.6). Tariffs are placeholders
+(0.20 / 0.05 EUR/kWh).
+
+```bash
+# 4. Verification tests (energy balance, money conservation, reproducibility, ...)
+python -m pytest
+```
 
 ## Input data
 
