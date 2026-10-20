@@ -35,9 +35,24 @@ pip install -r requirements.txt
 # 2. Input data (already committed in data/; rerun only to rebuild)
 python scripts/get_pvgis.py       # PVGIS hourly PV yield -> data/processed/pv_porto.csv
 python scripts/prep_load.py       # E-REDES BTN C profile  -> data/processed/load_btn_c.csv
+
+# 3. Run the baseline community for one year and print its KPIs
+python -m experiments.run_baseline --seed 42
 ```
 
-Model and experiment instructions will be added as they are implemented.
+```python
+# Or from Python / a notebook (run from the repo root)
+from model.model import Community
+m = Community(n_households=30, pv_share=0.4, rng=42)
+m.run_year()
+m.kpis()                                   # run-level KPIs (ODD section 8)
+m.datacollector.get_model_vars_dataframe() # hourly community flows
+m.household_table()                        # per-household annual results
+```
+
+Current model: households, local sharing at a fixed price, grid exchange.
+Batteries, other pricing mechanisms, demand response, outages and membership
+are added in later steps. Tariffs are placeholders (0.20 / 0.05 EUR/kWh).
 
 ## Input data
 

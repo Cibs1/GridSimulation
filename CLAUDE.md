@@ -20,7 +20,7 @@ Context for Claude Code. Read this first, then `docs/ODD.md` (the model specific
 ## Tech stack
 - **Python ≥ 3.12**, conda env named `microgrid`
 - **Mesa 3.x** (3.5.1 at setup): `pip install -U "mesa[rec]" pandas jupyter`
-- Mesa 3 API, so DO NOT use Mesa 2 patterns (`RandomActivation`, `self.schedule`, `unique_id` passed manually). Use `model.agents`, `shuffle_do`, `model.steps`, `super().__init__(seed=seed)`, `DataCollector`, `mesa.batch_run`.
+- Mesa 3 API, so DO NOT use Mesa 2 patterns (`RandomActivation`, `self.schedule`, `unique_id` passed manually). Use `model.agents`, `shuffle_do`, `model.steps` (incremented before `step()` runs, so the current hour is `steps - 1`), `super().__init__(rng=seed)` (`seed=` is deprecated in 3.5), `DataCollector`, `mesa.batch_run`.
 - pandas/numpy for data; matplotlib/plotly for plots; Solara (via mesa[rec]) for an optional dashboard; scipy/statsmodels for stats.
 
 ## Planned repo structure
