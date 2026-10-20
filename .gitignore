@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Large batch-run outputs (keep summaries, regenerate the rest)
+experiments/results/*.parquet
+experiments/results/raw/
