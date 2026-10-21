@@ -46,7 +46,7 @@ docs/ODD.md          model documentation
 - Agent: `Household` (demand, `pv_kwp`, optional home battery, `flexibility`, `cooperation`, `is_member`, cost/revenue accumulators). Entities: community Battery, Grid, Community (model).
 - Step = 1 h, horizon = 1 year (8,760 steps); baseline 30 households, 40% with PV.
 - Per-step order: environment update → membership (daily) → demand response → self-consumption (PV, then home battery) → local market + pricing → community battery → grid exchange + settlement.
-- Pricing mechanisms: no community (reference), fixed, mid-market, supply–demand ratio (SDR, Liu et al. 2017), bill-sharing.
+- Pricing mechanisms: no community (reference), fixed, mid-market, supply–demand ratio (SDR, Liu et al. 2017), dynamic, bill-sharing (Long et al. 2017).
 - KPIs: community savings, self-sufficiency, self-consumption, peak import, fairness (Gini of savings), resilience (share served during outages, lost load).
 - Experiments: 30 seeds per scenario, mean ± 95% CI, ANOVA/Kruskal–Wallis + Tukey.
 
@@ -54,21 +54,22 @@ docs/ODD.md          model documentation
 - **Lost load** = demand not met (deficit with no source). **Curtailment** = surplus wasted (can't be used, stored or exported). They are different things.
 - Energy balance check every step: `PV + import + discharge + lost_load = demand + export + charge + curtailment`
 
-## Pending changes to docs/ODD.md
-- Add **curtailment (kWh)** to the Resilience KPI in section 8.
-- Update the energy balance check in section 8 to include curtailment (the version above).
-- Section 6: update the load source to E-REDES BTN C (decided above).
-
 ## Open decisions (with the group)
 - Narrow to 2–3 research questions (currently 4: pricing, storage, demand response, resilience)
 - Exact tariff values / time-of-use or not
-- Include membership dynamics (7.6) or leave as an extension
+- Participation threshold for membership (2 EUR/30 days used in E1; needs a justification, e.g. real CER fees)
+
+## Decided (Oct 2026)
+- Membership change (7.6) is in: monthly review, 20% start outside, leave if 30-day savings < threshold (p_leave 0.5), join if same-type members saved (p_join 0.2).
+- Grid price stays flat; new `dynamic` community price p_exp + (p_imp - p_exp) * D / (S + D). SDR (Liu) kept for comparison.
+- Demand response is price-responsive: shifts evening load to hours with the lowest forecast effective price (exponentially smoothed past prices).
+- docs/ODD.md updated to v0.2 (Oct 21) to match the code; keep it in sync with every model change.
 
 ## Next steps
-1. Create repo structure, `git init`, push to GitHub
-2. Write and run `scripts/get_pvgis.py` and `scripts/prep_load.py` → two hourly CSVs
-3. Sanity-plot one week in January and one in July (PV midday peak, demand morning/evening peaks)
-4. Minimal working model: households + local balancing + grid exchange, with DataCollector
-5. Add features one at a time: shared storage → pricing mechanisms → outages → membership
-6. Batch experiments + statistical analysis
-7. Dashboard (optional), slides, video, run script
+1. ~~Create repo structure, push to GitHub~~ (done)
+2. ~~`scripts/get_pvgis.py` and `scripts/prep_load.py` → two hourly CSVs~~ (done)
+3. ~~Sanity plots~~ (done, `notebooks/01_data_check.ipynb`)
+4. ~~Minimal working model~~ (done)
+5. ~~Storage, pricing mechanisms, outages, demand response, membership~~ (done, `tests/test_model.py`)
+6. ~~Batch experiments + statistical analysis~~ (done, `experiments/`, `notebooks/02_experiments.ipynb`)
+7. Group decisions (RQs, tariffs, threshold), then dashboard (optional), slides, video, run script

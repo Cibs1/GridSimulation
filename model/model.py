@@ -1,13 +1,13 @@
 """Community model (ODD sections 3, 5, 7 and 8).
 
 Per-step order (ODD section 3):
-    1. environment update (hour, grid availability)
+    1. environment update (hour, grid availability, daily price forecast)
+    2. membership review (every `review_days` days, at local hour 0)
     3. demand response (daily, at local hour 0)
     4. self-consumption: own PV, then home battery
     5. local market and pricing
     6. community battery
     7. grid exchange and settlement
-Process 2 (membership change, submodel 7.6) is not implemented yet.
 """
 
 from functools import lru_cache
@@ -22,7 +22,7 @@ from .battery import Battery
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "processed"
 HOURS_PER_YEAR = 8760
-PRICING_MECHANISMS = ("none", "fixed", "mid_market", "sdr", "bill_sharing")
+PRICING_MECHANISMS = ("none", "fixed", "mid_market", "sdr", "dynamic", "bill_sharing")
 STORAGE_MODES = ("none", "shared", "individual")
 
 
@@ -69,6 +69,14 @@ class Community(mesa.Model):
         max_shift_h=1,
         cooperation=1.0,
         flexibility=0.0,
+        dr_threshold_range=(0.0, 0.03),  # EUR/kWh, minimum expected saving to shift load
+        price_memory=0.3,  # weight of the latest day in the price forecast (exponential smoothing)
+        membership=False,  # membership change (7.6)
+        initial_member_share=1.0,
+        review_days=30,
+        savings_threshold=0.0,  # EUR over the review window; members below it may leave
+        p_leave=0.5,
+        p_join=0.2,
         pricing="mid_market",
         fixed_price=0.10,  # EUR/kWh, used by pricing="fixed"
         import_price=0.20,  # EUR/kWh, placeholder
@@ -96,6 +104,12 @@ class Community(mesa.Model):
         self.import_price = import_price
         self.export_price = export_price
         self.flexibility = flexibility
+        self.price_memory = price_memory
+        self.membership = membership
+        self.review_days = review_days
+        self.savings_threshold = savings_threshold
+        self.p_leave = p_leave
+        self.p_join = p_join
         self.check_balance = check_balance
 
         # Separate stream for outages, drawn first, so changing the outage
@@ -116,7 +130,12 @@ class Community(mesa.Model):
                 shift_h=self.random.randint(-max_shift_h, max_shift_h),
                 cooperation=cooperation,
                 flexibility=flexibility,
+                dr_threshold=self.random.uniform(*dr_threshold_range),
             )
+
+        n_out = round(n_households * (1 - initial_member_share))
+        for h in self.random.sample(list(self.households), n_out):
+            h.is_member = False
 
         # Storage: one community battery, or the same total kWh split over
         # prosumers in proportion to their PV size (a home battery can only
@@ -136,6 +155,11 @@ class Community(mesa.Model):
         self.battery_cash_eur = 0.0  # net income of the community battery (counts as community savings)
         self.supply = self.bids = self.traded = 0.0
         self.bat_charge = self.bat_discharge = 0.0
+        # Price a member pays per extra kWh in each hour (local share at the local
+        # price, the rest at p_imp), and its smoothed forecast by local hour of day
+        self.effective_price = np.full(HOURS_PER_YEAR, np.nan)
+        self.price_forecast = np.full(24, np.nan)
+        self.leaves = self.joins = 0
         self.flows = dict.fromkeys(
             ["pv", "demand", "self_use", "shared", "battery_charge", "battery_discharge",
              "imported", "exported", "lost_load", "curtailment"], 0.0
@@ -149,6 +173,8 @@ class Community(mesa.Model):
                 **{k: (lambda m, k=k: m.flows[k]) for k in self.flows},
                 "net_load": lambda m: m.flows["imported"] - m.flows["exported"],
                 "storage_soc": lambda m: m.storage_soc(),
+                "effective_price": lambda m: m.effective_price[m.hour],
+                "n_members": lambda m: len(m.members),
             }
         )
 
@@ -176,9 +202,15 @@ class Community(mesa.Model):
         self.hour = self.steps - 1  # Mesa increments steps before calling step()
         grid_up = bool(self.grid_available[self.hour])
 
-        # 3. Demand response, planned once per day at local midnight
-        if self.flexibility > 0 and self.local_hour[self.hour] == 0:
-            self.plan_demand_response()
+        if self.local_hour[self.hour] == 0 and self.hour > 0:
+            day = np.searchsorted(self.day_starts, self.hour, side="right") - 1
+            self.update_price_forecast(self.day_starts[day - 1])
+            # 2. Membership review
+            if self.membership and self.pricing != "none" and day % self.review_days == 0:
+                self.review_membership()
+            # 3. Demand response, planned once per day
+            if self.flexibility > 0:
+                self.plan_demand_response()
 
         # 4. Self-consumption (synchronous: all households before the market)
         self.households.shuffle_do("compute_position")
@@ -193,26 +225,58 @@ class Community(mesa.Model):
         # 7. Grid exchange and settlement
         self.households.do("exchange_with_grid", grid_up)
         self.settle()
+        self.effective_price[self.hour] = self.member_price()
 
         self.update_flows()
         self.datacollector.collect(self)
         if self.steps >= HOURS_PER_YEAR:
             self.running = False
 
+    def update_price_forecast(self, yesterday_start):
+        """Exponentially smoothed effective price by local hour, updated with yesterday's prices (ODD 4, Prediction)."""
+        a = self.price_memory
+        for k in range(yesterday_start, self.hour):
+            h, p = self.local_hour[k], self.effective_price[k]
+            f = self.price_forecast[h]
+            self.price_forecast[h] = p if np.isnan(f) else (1 - a) * f + a * p
+
     def plan_demand_response(self):
-        """Persistence forecast: today's PV is assumed equal to yesterday's (ODD 4, Prediction)."""
+        """Each flexible household plans today's load shift from forecast prices (submodel 7.4)."""
         start = self.hour
-        if start < 24:
-            return  # no yesterday on day one
         nxt = np.searchsorted(self.day_starts, start, side="right")
         end = self.day_starts[nxt] if nxt < len(self.day_starts) else HOURS_PER_YEAR
-        forecast = self.pv_yield[start - 24:end - 24]
-        if forecast.sum() <= 0:
-            return
-        weights = forecast / forecast.sum()
+        today = slice(start, end)
+        price = self.price_forecast[self.local_hour[today]]
+        price = np.where(np.isnan(price), self.import_price, price)
+        pv_forecast = self.pv_yield[start - 24:end - 24]  # persistence: today's PV = yesterday's
         for h in self.households:
             if h.flexibility > 0:
-                h.plan_demand_response(slice(start, end), weights)
+                h.plan_demand_response(today, price, pv_forecast)
+
+    def review_membership(self):
+        """Members whose savings since the last review fall below the threshold may leave;
+        non-members may join if members of their own type saved (submodel 7.6)."""
+        hh = list(self.households)
+        savings = {h: h.window_savings_eur for h in hh}
+        members = [h for h in hh if h.is_member]
+
+        def mean_member_savings(prosumer):
+            same = [savings[h] for h in members if h.is_prosumer == prosumer]
+            pool = same or [savings[h] for h in members]
+            return np.mean(pool) if pool else -np.inf
+
+        reference = {True: mean_member_savings(True), False: mean_member_savings(False)}
+        self.random.shuffle(hh)
+        for h in hh:  # decisions use the state before the review (synchronous)
+            if h.is_member:
+                if savings[h] < self.savings_threshold - 1e-6 and self.random.random() < self.p_leave:
+                    h.is_member = False
+                    self.leaves += 1
+            elif reference[h.is_prosumer] > self.savings_threshold and self.random.random() < self.p_join:
+                h.is_member = True
+                self.joins += 1
+        for h in hh:
+            h.mark_review()
 
     def market_price(self, supply, bids):
         """Local price for this step under the active mechanism (submodel 7.3).
@@ -232,6 +296,12 @@ class Community(mesa.Model):
                 return p_exp
             sdr = supply / bids
             return p_imp * p_exp / ((p_imp - p_exp) * sdr + p_exp)
+        if self.pricing == "dynamic":
+            # Symmetric supply-demand price: p_exp with a large surplus, the
+            # mid-point when supply equals demand, p_imp under scarcity.
+            if supply + bids <= 0:
+                return (p_imp + p_exp) / 2
+            return p_exp + (p_imp - p_exp) * bids / (supply + bids)
         return np.nan  # bill_sharing
 
     def clear_local_market(self):
@@ -294,6 +364,20 @@ class Community(mesa.Model):
         # The battery buys its charge from sellers and sells its discharge to buyers at the local price
         self.battery_cash_eur += (self.bat_discharge - self.bat_charge) * p_local
 
+    def member_price(self):
+        """Average price a member paid per kWh of deficit this step: the share served
+        locally (market + community battery) at the local price, the rest at p_imp.
+        With no deficits, an extra kWh would come from the local surplus."""
+        p_imp, p_exp = self.import_price, self.export_price
+        if self.pricing == "none":
+            return p_imp
+        if self.pricing == "bill_sharing":
+            return self.local_price if self.bids > 0 else p_exp
+        if self.bids <= 0:
+            return self.local_price if self.supply > 0 else p_imp
+        local_share = (self.traded + self.bat_discharge) / self.bids
+        return local_share * self.local_price + (1 - local_share) * p_imp
+
     def update_flows(self):
         f = self.flows
         hh = list(self.households)
@@ -347,6 +431,11 @@ class Community(mesa.Model):
             "lost_load_alone_kwh": sum(h.lost_load_alone_kwh for h in hh),
             "curtailment_kwh": df["curtailment"].sum(),
             "battery_cash_eur": self.battery_cash_eur,
+            "members_final": len(self.members),
+            "prosumer_members_final": sum(h.is_member and h.is_prosumer for h in hh),
+            "member_share_mean": df["n_members"].mean() / len(hh),
+            "leaves": self.leaves,
+            "joins": self.joins,
         }
 
     def household_table(self):

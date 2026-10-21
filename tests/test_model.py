@@ -65,11 +65,50 @@ def test_storage_increases_self_sufficiency(reference):
         assert run(storage_mode=mode, storage_kwh=100).kpis()["self_sufficiency"] > base
 
 
+def test_community_savings_with_membership_and_dr(reference):
+    model = run(pricing="dynamic", membership=True, initial_member_share=0.8, savings_threshold=2, flexibility=0.1)
+    expected = grid_bill(reference) - grid_bill(model)
+    assert model.kpis()["community_savings_eur"] == pytest.approx(expected, rel=1e-9, abs=1e-6)
+
+
 def test_demand_response_keeps_daily_totals():
     model = run(flexibility=0.2)
+    shifted = 0
     for h in model.households:
         assert h.demand_profile.sum() == pytest.approx(h.base_demand.sum())
-        assert not np.allclose(h.demand_profile, h.base_demand)
+        shifted += not np.allclose(h.demand_profile, h.base_demand)
+    assert shifted >= 0.9 * len(model.households)
+
+
+def test_price_responsive_dr_lowers_rebound_peak():
+    """Spreading load over cheaper hours avoids everyone piling into the same hours."""
+    assert run(flexibility=0.2).kpis()["peak_import_kw"] < 38
+
+
+def test_dynamic_price_bounds():
+    m = Community(rng=1, pricing="dynamic")
+    assert m.market_price(100, 0) == pytest.approx(m.export_price)
+    assert m.market_price(10, 10) == pytest.approx((m.import_price + m.export_price) / 2)
+    assert m.market_price(0, 100) == pytest.approx(m.import_price)
+
+
+def test_membership_off_keeps_everyone():
+    k = run(pricing="bill_sharing").kpis()
+    assert k["members_final"] == 30 and k["leaves"] == 0
+
+
+def test_bill_sharing_drives_prosumers_out():
+    k = run(pricing="bill_sharing", membership=True, savings_threshold=2).kpis()
+    assert k["prosumer_members_final"] < 12 and k["leaves"] > 0
+
+
+def test_non_members_do_not_trade():
+    model = Community(rng=1, initial_member_share=0.5)
+    for _ in range(24 * 7):
+        model.step()
+    for h in model.households:
+        if not h.is_member:
+            assert h.energy_shared_kwh == 0
 
 
 def test_no_grid_exchange_during_outages():

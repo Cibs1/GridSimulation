@@ -1,4 +1,4 @@
-"""Household agent (ODD section 2 and submodels 7.1, 7.4)."""
+"""Household agent (ODD section 2 and submodels 7.1, 7.4, 7.6)."""
 
 import mesa
 import numpy as np
@@ -16,12 +16,14 @@ class Household(mesa.Agent):
     consumed) can differ from `base_demand` while daily totals stay the same.
     """
 
-    def __init__(self, model, annual_kwh, pv_kwp, noise_sd, shift_h, cooperation=1.0, flexibility=0.0):
+    def __init__(self, model, annual_kwh, pv_kwp, noise_sd, shift_h, cooperation=1.0, flexibility=0.0,
+                 dr_threshold=0.0):
         super().__init__(model)
         self.annual_kwh = annual_kwh
         self.pv_kwp = pv_kwp
         self.cooperation = cooperation
         self.flexibility = flexibility
+        self.dr_threshold = dr_threshold  # minimum expected saving (EUR/kWh) that makes it shift load
         self.is_member = True
         self.battery = None  # home battery, set by the model in the "individual" storage mode
 
@@ -46,6 +48,9 @@ class Household(mesa.Agent):
         self.energy_imported_kwh = self.energy_exported_kwh = 0.0
         self.energy_shared_kwh = 0.0  # bought + sold locally
         self.lost_load_kwh = 0.0
+
+        # Bill and reference bill at the last membership review
+        self._review_bill = self._review_bill_alone = 0.0
 
     def _init_reference(self, model):
         """Hourly bill of the no-community reference, as a cumulative series.
@@ -82,20 +87,43 @@ class Household(mesa.Agent):
     def savings_eur(self):
         return self.bill_alone_eur - self.bill_eur
 
-    def plan_demand_response(self, today, weights):
-        """Move up to `flexibility` x daily demand from 17:00-22:00 into forecast PV hours (submodel 7.4).
+    @property
+    def window_savings_eur(self):
+        """Savings since the last membership review."""
+        return (self.bill_alone_eur - self._review_bill_alone) - (self.bill_eur - self._review_bill)
 
-        `today` is the slice of steps in the current local day and `weights`
-        the forecast PV share of each of those steps (sums to 1).
+    def mark_review(self):
+        self._review_bill, self._review_bill_alone = self.bill_eur, self.bill_alone_eur
+
+    def plan_demand_response(self, today, community_price, pv_forecast):
+        """Move up to `flexibility` x daily demand from 17:00-22:00 into cheaper hours (submodel 7.4).
+
+        `today` is the slice of steps in the current local day. Members use
+        the community's forecast price per kWh (`community_price`); others
+        value an hour at p_exp if they expect their own PV to exceed their
+        demand (persistence forecast `pv_forecast`, kWh/kWp) and p_imp
+        otherwise. Load goes to the hours cheaper than the evening, in
+        proportion to how much cheaper they are, and only if the best
+        expected saving reaches the household's `dr_threshold`.
         """
+        m = self.model
         d = self.demand_profile[today]
-        evening = (self.model.local_hour[today] >= 17) & (self.model.local_hour[today] < 22)
+        if self.is_member and m.pricing != "none":
+            price = community_price
+        else:
+            price = np.where(self.pv_kwp * pv_forecast > d, m.export_price, m.import_price)
+
+        evening = (m.local_hour[today] >= 17) & (m.local_hour[today] < 22)
         evening_kwh = d[evening].sum()
-        shift = min(self.flexibility * d.sum(), evening_kwh)
-        if shift <= 0:
+        if evening_kwh <= 0:
             return
+        evening_price = (price[evening] * d[evening]).sum() / evening_kwh
+        gain = np.where(evening, 0.0, np.clip(evening_price - price, 0, None))
+        if gain.max() <= 0 or gain.max() < self.dr_threshold:
+            return
+        shift = min(self.flexibility * d.sum(), evening_kwh)
         d[evening] *= 1 - shift / evening_kwh
-        d += shift * weights  # writes through to demand_profile (d is a view)
+        d += shift * gain / gain.sum()  # writes through to demand_profile (d is a view)
 
     def compute_position(self):
         """Self-consumption, home battery and net position for this step (process 4)."""

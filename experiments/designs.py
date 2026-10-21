@@ -7,15 +7,30 @@ paired by seed (common random numbers: same households, weather and outages).
 
 SEEDS = range(30)
 
-PRICING = ["none", "fixed", "mid_market", "sdr", "bill_sharing"]
+PRICING = ["none", "fixed", "mid_market", "sdr", "dynamic", "bill_sharing"]
 STORAGE_KWH = [50, 100, 200]
+
+# Membership change (7.6) on, 20% of households outside at the start. A member
+# leaves if it saved less than the threshold over the last 30 days, which
+# stands for the cost of taking part (fees, effort). 2 EUR per 30 days in E1.
+MEMBERSHIP = {"membership": True, "initial_member_share": 0.8}
+THRESHOLD = 2.0
 
 
 def pricing():
-    """E1: pricing mechanism x share of households with PV."""
+    """E1: pricing mechanism x share of households with PV, with membership change."""
     return {
-        f"{p} | pv {int(s * 100)}%": {"pricing": p, "pv_share": s}
+        f"{p} | pv {int(s * 100)}%": {"pricing": p, "pv_share": s, **MEMBERSHIP, "savings_threshold": THRESHOLD}
         for s in [0.2, 0.4, 0.6, 0.8]
+        for p in PRICING
+    }
+
+
+def membership_threshold():
+    """E1b: pricing mechanism x participation threshold (EUR per 30 days), 40% PV."""
+    return {
+        f"{p} | threshold {t:g}": {"pricing": p, **MEMBERSHIP, "savings_threshold": t}
+        for t in [0.0, 2.0, 5.0]
         for p in PRICING
     }
 
@@ -30,9 +45,12 @@ def storage():
 
 
 def demand_response():
-    """E3: demand-response flexibility. Mid-market pricing; with price-independent
-    behaviour, the price rule does not change the energy flows (see E1)."""
-    return {f"flex {f}": {"flexibility": f} for f in [0.0, 0.1, 0.2]}
+    """E3: price-responsive demand response x pricing mechanism (membership fixed)."""
+    return {
+        f"{p} | flex {f}": {"pricing": p, "flexibility": f}
+        for p in ["mid_market", "sdr", "dynamic"]
+        for f in [0.0, 0.1, 0.2]
+    }
 
 
 def resilience():
@@ -70,6 +88,7 @@ def sensitivity():
 
 DESIGNS = {
     "e1_pricing": pricing,
+    "e1b_membership_threshold": membership_threshold,
     "e2_storage": storage,
     "e3_demand_response": demand_response,
     "e4_resilience": resilience,

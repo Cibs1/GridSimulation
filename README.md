@@ -51,19 +51,20 @@ m.household_table()                        # per-household annual results
 ```
 
 Scenario options (see `Community.__init__` in `model/model.py`):
-`pricing` (`none`, `fixed`, `mid_market`, `sdr`, `bill_sharing`),
+`pricing` (`none`, `fixed`, `mid_market`, `sdr`, `dynamic`, `bill_sharing`),
 `storage_mode` (`none`, `shared`, `individual`) with `storage_kwh`,
-`flexibility` (demand response, 0-0.2) and `outage_rate` (outages per year).
+`flexibility` (price-responsive demand response, 0-0.2), `outage_rate`
+(outages per year) and `membership` (monthly join/leave decisions, with
+`initial_member_share` and `savings_threshold`).
 For example: `python -m experiments.run_baseline --pricing sdr --storage-mode shared --storage-kwh 100`.
 
-Not implemented yet: membership change (ODD 7.6). Tariffs are placeholders
-(0.20 / 0.05 EUR/kWh).
+Tariffs are placeholders (0.20 / 0.05 EUR/kWh).
 
 ```bash
 # 4. Verification tests (energy balance, money conservation, reproducibility, ...)
 python -m pytest
 
-# 5. Experiments (ODD section 8): 5 designs x 30 seeds, ~1,900 runs, ~10 min on 16 cores
+# 5. Experiments (ODD section 8): 6 designs x 30 seeds, ~2,800 runs, ~10 min on 16 cores
 python -m experiments.run_experiments               # all, or name some: e1_pricing e2_storage ...
 #    -> experiments/results/<experiment>.csv (one row per scenario x seed)
 
@@ -73,9 +74,10 @@ jupyter notebook notebooks/02_experiments.ipynb     # figures saved to notebooks
 
 | Experiment | Question | Design |
 | --- | --- | --- |
-| `e1_pricing` | RQ1 pricing and fairness | 5 mechanisms x PV share 20/40/60/80% |
+| `e1_pricing` | RQ1 pricing, membership and fairness | 6 mechanisms x PV share 20/40/60/80%, membership on (threshold 2 EUR/30 days) |
+| `e1b_membership_threshold` | robustness of RQ1 | 6 mechanisms x threshold 0/2/5 EUR per 30 days |
 | `e2_storage` | RQ2 shared vs individual storage | none / individual / shared x 50/100/200 kWh |
-| `e3_demand_response` | RQ3 flexibility | flexibility 0 / 0.1 / 0.2 |
+| `e3_demand_response` | RQ3 flexibility | mid-market / SDR / dynamic x flexibility 0 / 0.1 / 0.2 |
 | `e4_resilience` | RQ4 outages | 3 outage regimes x 3 storage options x 20/30/50 households |
 | `e5_sensitivity` | robustness | one-at-a-time: cooperation, battery efficiency, export price |
 
