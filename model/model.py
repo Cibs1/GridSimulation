@@ -338,6 +338,8 @@ class Community(mesa.Model):
             "self_consumption": (pv - df["exported"].sum() - df["curtailment"].sum()) / pv if pv > 0 else np.nan,
             "peak_import_kw": df["imported"].max(),  # kWh in a 1 h step = mean kW
             "gini_savings": gini(savings),
+            "prosumer_savings_eur": np.mean(pros) if pros else np.nan,  # mean per household
+            "consumer_savings_eur": np.mean(cons) if cons else np.nan,
             "prosumer_consumer_savings_ratio": np.mean(pros) / np.mean(cons) if pros and cons and np.mean(cons) else np.nan,
             "outage_hours": int(outage.sum()),
             "served_during_outages": 1 - df.loc[outage, "lost_load"].sum() / outage_demand if outage_demand else np.nan,
