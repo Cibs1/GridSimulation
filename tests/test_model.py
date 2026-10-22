@@ -87,9 +87,9 @@ def test_price_responsive_dr_lowers_rebound_peak():
 
 def test_dynamic_price_bounds():
     m = Community(rng=1, pricing="dynamic")
-    assert m.market_price(100, 0) == pytest.approx(m.export_price)
-    assert m.market_price(10, 10) == pytest.approx((m.import_price + m.export_price) / 2)
-    assert m.market_price(0, 100) == pytest.approx(m.import_price)
+    assert m.manager.market_price(100, 0) == pytest.approx(m.export_price)
+    assert m.manager.market_price(10, 10) == pytest.approx((m.import_price + m.export_price) / 2)
+    assert m.manager.market_price(0, 100) == pytest.approx(m.import_price)
 
 
 def test_membership_off_keeps_everyone():

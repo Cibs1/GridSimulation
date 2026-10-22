@@ -1,6 +1,10 @@
-# Community Microgrid ABM — ODD Protocol (Draft v0.2)
+# Community Microgrid ABM — ODD Protocol (Draft v0.3)
 
-Oct 21, 2026 · @Ricardo
+Oct 22, 2026 · @Ricardo
+
+Changes since v0.2 (Oct 21): the local market, community battery and billing are
+run by a new **CommunityManager** agent instead of the model itself. Behaviour and
+results are unchanged.
 
 Changes since v0.1 (Oct 6): load data source fixed (E-REDES BTN C); new `dynamic`
 pricing mechanism; bill-sharing defined as in Long et al. (2017); demand response
@@ -29,7 +33,7 @@ The model tests which local energy-sharing and pricing rules give a residential 
 
 ## 2. Entities, state variables and scales
 
-The model has one agent type, the **Household**, plus three non-agent entities: the **Battery** (community or home), the **Grid** and the **Community** (the Mesa model itself, which runs the local market).
+The model has two agent types: the **Household** (many) and the **CommunityManager** (one), which operates the local market, holds the community battery and bills every household. There are three non-agent entities: the **Battery** (community or home), the **Grid** and the **Community** (the Mesa model, which holds the environment, the scenario parameters and the schedule).
 
 | Entity | State variable | Unit | Type |
 | --- | --- | --- | --- |
@@ -48,9 +52,11 @@ The model has one agent type, the **Household**, plus three non-agent entities: 
 | Grid | `import_price`, `export_price` | €/kWh | input, flat |
 | Grid | `grid_available` (false during an outage) | bool per hour | generated at start |
 | Community | `pricing`, `storage_mode` (none / individual / shared), `storage_kwh`, `membership` | – | scenario parameter |
-| Community | `local_price` (internal price this step) | €/kWh | dynamic |
-| Community | `effective_price` (average price a member paid per kWh of deficit this step) and `price_forecast` (by hour of day) | €/kWh | dynamic |
-| Community | `battery_cash_eur` (net income of the community battery) | € | dynamic, accumulated |
+| CommunityManager | `supply`, `bids`, `traded` (members' offers, bids and energy matched locally this step) | kWh | dynamic |
+| CommunityManager | `battery` (the community battery, only in the "shared" storage mode), `fixed_price` | –, €/kWh | static |
+| CommunityManager | `local_price` (internal price this step) | €/kWh | dynamic |
+| CommunityManager | `effective_price` (average price a member paid per kWh of deficit this step) and `price_forecast` (by hour of day) | €/kWh | dynamic |
+| CommunityManager | `battery_cash_eur` (net income of the community battery) | € | dynamic, accumulated |
 
 **Scales**
 
@@ -66,9 +72,9 @@ Each hourly step runs the same processes in a fixed order. Households act in ran
 2. **Membership (every 30 days, at local midnight):** households may leave or join depending on their recent savings (7.6). Off in the baseline.
 3. **Demand response (daily, at local midnight):** flexible households plan today's load shift from the price forecast (7.4).
 4. **Self-consumption:** each household covers its own demand from its PV, then charges or discharges its home battery (if any), and computes its net position: surplus or deficit (7.1).
-5. **Local market:** the Community collects offers (surplus of cooperating members) and bids (deficits of members), matches them pro rata and sets `local_price` with the active pricing mechanism (7.3).
-6. **Community storage:** leftover offers charge the shared battery; leftover bids are served from it, within power and SoC limits (7.2).
-7. **Grid exchange and settlement:** any remaining deficit is imported and any remaining surplus exported if the grid is available; during an outage they become *lost load* and *curtailment* (7.5). Costs and revenues are booked to each household.
+5. **Local market:** the CommunityManager collects offers (surplus of cooperating members) and bids (deficits of members), matches them pro rata and sets `local_price` with the active pricing mechanism (7.3).
+6. **Community storage:** the CommunityManager charges the shared battery with leftover offers and serves leftover bids from it, within power and SoC limits (7.2).
+7. **Grid exchange and settlement:** any remaining deficit is imported and any remaining surplus exported if the grid is available; during an outage they become *lost load* and *curtailment* (7.5). The CommunityManager then books costs and revenues to each household.
 
 State updates are **synchronous within a step**: all households compute their net position (step 4) before the market clears (step 5), and membership decisions use the state before the review. The `DataCollector` records community-level flows and prices at the end of every step; household results are read at the end of the run.
 
@@ -81,11 +87,11 @@ Community-level self-sufficiency, savings, fairness and size *emerge* from house
 | Basic principles | Collective self-consumption and peer-to-peer energy sharing behind one grid connection; local prices sit between the grid export and import prices, so trading locally is never worse than trading with the grid for either side (except under bill-sharing). |
 | Emergence | Community self-sufficiency, peak grid import, total savings, how savings are distributed (fairness) and how many households stay in the community. |
 | Adaptation | Flexible households shift load toward hours with the lowest expected price. In membership scenarios, a household leaves if its recent savings fall below a threshold, and joins if members like it are saving. |
-| Objectives | Each household minimises its energy bill. The community has no objective of its own; it only applies the market rule. |
+| Objectives | Each household minimises its energy bill. The CommunityManager has no objective of its own; it only applies the market rule. |
 | Learning | Not included. Possible extension: households adjust `cooperation` based on past gains. |
 | Prediction | Prices: exponentially smoothed effective price per hour of day from past days (weight 0.3 on the latest day). PV (for non-members' demand response): persistence, today = yesterday. |
 | Sensing | Households know their own state, the community's price forecast and, for membership decisions, the average recent savings of members of their own type (prosumer or consumer), as a community would publish them. They do not see other households' individual data. |
-| Interaction | Indirect, through the local market, the shared battery and the price signal (no direct agent-to-agent negotiation). |
+| Interaction | Households interact only through the CommunityManager: they send it offers and bids, and it returns matched energy, the price and the bill. There is no direct household-to-household negotiation. |
 | Stochasticity | Demand noise and peak shift, PV sizes, annual demand, demand-response thresholds, initial members, outage start and duration, cooperation draws, membership draws, activation order. Weather is the real 2023 series. Controlled by the model seed; outages use a separate random stream so that changing outage parameters does not change the population. |
 | Collectives | The community itself; prosumers versus consumers for reporting. |
 | Observation | Per step: energy flows (PV, demand, self-use, shared, battery charge and discharge, imported, exported, lost load, curtailment), local and effective price, storage SoC, number of members. Per run: KPIs in section 8. |

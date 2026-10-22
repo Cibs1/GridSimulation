@@ -31,7 +31,8 @@ data/processed/      pv_porto.csv, load_btn_c.csv (hourly, 8,760 rows, 2023, ind
 scripts/get_pvgis.py download PVGIS hourly data
 scripts/prep_load.py E-REDES BTN C profile -> hourly kWh
 model/agents.py      Household
-model/model.py       Community (Mesa Model; runs local market, battery, grid)
+model/manager.py     CommunityManager (agent: local market, community battery, billing)
+model/model.py       Community (Mesa Model; environment, grid, schedule)
 experiments/         batch_run scripts + results
 notebooks/           analysis and plots
 docs/ODD.md          model documentation
@@ -43,7 +44,7 @@ docs/ODD.md          model documentation
 - **Tariffs**: Portuguese regulated tariffs (ERSE); export price well below import price. Exact values still TBD.
 
 ## Model summary (full spec in docs/ODD.md)
-- Agent: `Household` (demand, `pv_kwp`, optional home battery, `flexibility`, `cooperation`, `is_member`, cost/revenue accumulators). Entities: community Battery, Grid, Community (model).
+- Agents: `Household` (demand, `pv_kwp`, optional home battery, `flexibility`, `cooperation`, `is_member`, cost/revenue accumulators) and one `CommunityManager` (`model.manager`: market clearing, pricing, community battery, settlement, price forecast). Entities: Battery, Grid, Community (model).
 - Step = 1 h, horizon = 1 year (8,760 steps); baseline 30 households, 40% with PV.
 - Per-step order: environment update → membership (daily) → demand response → self-consumption (PV, then home battery) → local market + pricing → community battery → grid exchange + settlement.
 - Pricing mechanisms: no community (reference), fixed, mid-market, supply–demand ratio (SDR, Liu et al. 2017), dynamic, bill-sharing (Long et al. 2017).

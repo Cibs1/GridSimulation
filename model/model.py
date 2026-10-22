@@ -5,9 +5,9 @@ Per-step order (ODD section 3):
     2. membership review (every `review_days` days, at local hour 0)
     3. demand response (daily, at local hour 0)
     4. self-consumption: own PV, then home battery
-    5. local market and pricing
-    6. community battery
-    7. grid exchange and settlement
+    5. local market and pricing        (CommunityManager)
+    6. community battery               (CommunityManager)
+    7. grid exchange and settlement    (households, then CommunityManager)
 """
 
 from functools import lru_cache
@@ -19,6 +19,7 @@ import pandas as pd
 
 from .agents import Household
 from .battery import Battery
+from .manager import CommunityManager
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "processed"
 HOURS_PER_YEAR = 8760
@@ -55,6 +56,10 @@ def outage_schedule(rng, rate_per_year, duration_range):
 
 class Community(mesa.Model):
     """A residential energy community behind one grid connection.
+
+    The model holds the environment (weather, load shapes, grid tariffs and
+    availability) and the agents: the households and one CommunityManager
+    that runs the local market, the community battery and billing.
 
     Prices are placeholders until the ERSE tariff values are decided.
     """
@@ -100,11 +105,9 @@ class Community(mesa.Model):
         self.day_starts = np.flatnonzero(self.local_hour == 0)
 
         self.pricing = pricing
-        self.fixed_price = fixed_price
         self.import_price = import_price
         self.export_price = export_price
         self.flexibility = flexibility
-        self.price_memory = price_memory
         self.membership = membership
         self.review_days = review_days
         self.savings_threshold = savings_threshold
@@ -140,25 +143,21 @@ class Community(mesa.Model):
         # Storage: one community battery, or the same total kWh split over
         # prosumers in proportion to their PV size (a home battery can only
         # charge from its own PV, so it would be idle in a consumer's home).
-        self.battery = None
+        community_battery = None
         battery_kw = dict(c_rate=battery_c_rate, round_trip_efficiency=battery_efficiency)
         if storage_mode == "shared" and storage_kwh > 0:
-            self.battery = Battery(storage_kwh, **battery_kw)
+            community_battery = Battery(storage_kwh, **battery_kw)
         elif storage_mode == "individual" and storage_kwh > 0:
             prosumers = [h for h in self.households if h.is_prosumer]
             total_kwp = sum(h.pv_kwp for h in prosumers)
             for h in prosumers:
                 h.battery = Battery(storage_kwh * h.pv_kwp / total_kwp, **battery_kw)
 
+        # Created after the households so their unique_ids do not depend on it
+        self.manager = CommunityManager(self, fixed_price=fixed_price, battery=community_battery,
+                                        price_memory=price_memory)
+
         self.hour = 0
-        self.local_price = np.nan
-        self.battery_cash_eur = 0.0  # net income of the community battery (counts as community savings)
-        self.supply = self.bids = self.traded = 0.0
-        self.bat_charge = self.bat_discharge = 0.0
-        # Price a member pays per extra kWh in each hour (local share at the local
-        # price, the rest at p_imp), and its smoothed forecast by local hour of day
-        self.effective_price = np.full(HOURS_PER_YEAR, np.nan)
-        self.price_forecast = np.full(24, np.nan)
         self.leaves = self.joins = 0
         self.flows = dict.fromkeys(
             ["pv", "demand", "self_use", "shared", "battery_charge", "battery_discharge",
@@ -169,11 +168,11 @@ class Community(mesa.Model):
             model_reporters={
                 "hour_of_day": lambda m: int(m.local_hour[m.hour]),
                 "grid_available": lambda m: bool(m.grid_available[m.hour]),
-                "local_price": "local_price",
+                "local_price": lambda m: m.manager.local_price,
                 **{k: (lambda m, k=k: m.flows[k]) for k in self.flows},
                 "net_load": lambda m: m.flows["imported"] - m.flows["exported"],
                 "storage_soc": lambda m: m.storage_soc(),
-                "effective_price": lambda m: m.effective_price[m.hour],
+                "effective_price": lambda m: m.manager.effective_price[m.hour],
                 "n_members": lambda m: len(m.members),
             }
         )
@@ -185,6 +184,11 @@ class Community(mesa.Model):
     @property
     def members(self):
         return [h for h in self.households if h.is_member]
+
+    @property
+    def battery(self):
+        """The community battery (held by the manager), or None."""
+        return self.manager.battery
 
     def batteries(self):
         bats = [h.battery for h in self.households if h.battery is not None]
@@ -204,7 +208,7 @@ class Community(mesa.Model):
 
         if self.local_hour[self.hour] == 0 and self.hour > 0:
             day = np.searchsorted(self.day_starts, self.hour, side="right") - 1
-            self.update_price_forecast(self.day_starts[day - 1])
+            self.manager.update_price_forecast(self.day_starts[day - 1])
             # 2. Membership review
             if self.membership and self.pricing != "none" and day % self.review_days == 0:
                 self.review_membership()
@@ -215,30 +219,20 @@ class Community(mesa.Model):
         # 4. Self-consumption (synchronous: all households before the market)
         self.households.shuffle_do("compute_position")
 
-        # 5-6. Local market and community battery
-        self.supply = self.bids = self.traded = self.bat_charge = self.bat_discharge = 0.0
-        self.local_price = np.nan
+        # 5-6. Local market and community battery, run by the manager
+        self.manager.reset_step()
         if self.pricing != "none":
-            self.clear_local_market()
-            self.operate_community_battery()
+            self.manager.clear_market()
+            self.manager.operate_battery()
 
-        # 7. Grid exchange and settlement
+        # 7. Grid exchange, then the manager settles every household's bill
         self.households.do("exchange_with_grid", grid_up)
-        self.settle()
-        self.effective_price[self.hour] = self.member_price()
+        self.manager.settle()
 
         self.update_flows()
         self.datacollector.collect(self)
         if self.steps >= HOURS_PER_YEAR:
             self.running = False
-
-    def update_price_forecast(self, yesterday_start):
-        """Exponentially smoothed effective price by local hour, updated with yesterday's prices (ODD 4, Prediction)."""
-        a = self.price_memory
-        for k in range(yesterday_start, self.hour):
-            h, p = self.local_hour[k], self.effective_price[k]
-            f = self.price_forecast[h]
-            self.price_forecast[h] = p if np.isnan(f) else (1 - a) * f + a * p
 
     def plan_demand_response(self):
         """Each flexible household plans today's load shift from forecast prices (submodel 7.4)."""
@@ -246,7 +240,7 @@ class Community(mesa.Model):
         nxt = np.searchsorted(self.day_starts, start, side="right")
         end = self.day_starts[nxt] if nxt < len(self.day_starts) else HOURS_PER_YEAR
         today = slice(start, end)
-        price = self.price_forecast[self.local_hour[today]]
+        price = self.manager.price_forecast[self.local_hour[today]]
         price = np.where(np.isnan(price), self.import_price, price)
         pv_forecast = self.pv_yield[start - 24:end - 24]  # persistence: today's PV = yesterday's
         for h in self.households:
@@ -278,115 +272,15 @@ class Community(mesa.Model):
         for h in hh:
             h.mark_review()
 
-    def market_price(self, supply, bids):
-        """Local price for this step under the active mechanism (submodel 7.3).
-
-        Fixed, mid-market and SDR use one price for both sides of every local
-        trade. Bill-sharing has no per-kWh price; it is settled in settle().
-        """
-        p_imp, p_exp = self.import_price, self.export_price
-        if self.pricing == "fixed":
-            return self.fixed_price
-        if self.pricing == "mid_market":
-            return (p_imp + p_exp) / 2
-        if self.pricing == "sdr":
-            # Liu et al. (2017). Buyers pay this price on their local share and
-            # p_imp on the rest, which equals their P_buy on the whole deficit.
-            if bids <= 0 or supply >= bids:
-                return p_exp
-            sdr = supply / bids
-            return p_imp * p_exp / ((p_imp - p_exp) * sdr + p_exp)
-        if self.pricing == "dynamic":
-            # Symmetric supply-demand price: p_exp with a large surplus, the
-            # mid-point when supply equals demand, p_imp under scarcity.
-            if supply + bids <= 0:
-                return (p_imp + p_exp) / 2
-            return p_exp + (p_imp - p_exp) * bids / (supply + bids)
-        return np.nan  # bill_sharing
-
-    def clear_local_market(self):
-        """Match offers and bids pro rata (submodel 7.3)."""
-        members = self.members
-        self.supply = sum(h.offer for h in members)
-        self.bids = sum(h.deficit for h in members)
-        self.traded = min(self.supply, self.bids)
-        self.local_price = self.market_price(self.supply, self.bids)
-        if self.traded <= 0:
-            return
-        for h in members:
-            h.sold_local = h.offer * self.traded / self.supply
-            h.bought_local = h.deficit * self.traded / self.bids
-
-    def operate_community_battery(self):
-        """Leftover offers charge the shared battery; leftover bids are served from it (process 6)."""
-        if self.battery is None:
-            return
-        members = self.members
-        left_supply = self.supply - self.traded
-        left_bids = self.bids - self.traded
-        self.bat_charge = self.battery.charge(left_supply)
-        if self.bat_charge > 0:
-            for h in members:
-                h.sold_local += (h.offer - h.sold_local) * self.bat_charge / left_supply
-        self.bat_discharge = self.battery.discharge(left_bids)
-        if self.bat_discharge > 0:
-            for h in members:
-                h.bought_local += (h.deficit - h.bought_local) * self.bat_discharge / left_bids
-
-    def settle(self):
-        """Book this step's costs and revenues to each household (process 7)."""
-        p_imp, p_exp = self.import_price, self.export_price
-
-        if self.pricing == "bill_sharing":
-            # The community nets its members' grid exchange; the import bill is
-            # split by each member's deficit and the export income by each
-            # member's offer (Long et al. 2017). Non-members trade alone.
-            members = self.members
-            pool_cost = p_imp * sum(h.imported for h in members)
-            pool_income = p_exp * sum(h.exported for h in members if h.offer > 0)
-            if self.bids > 0:
-                self.local_price = pool_cost / self.bids  # effective price per kWh of deficit, for reporting
-            for h in self.households:
-                if h.is_member:
-                    cost = pool_cost * h.deficit / self.bids if self.bids > 0 else 0.0
-                    income = pool_income * h.offer / self.supply if self.supply > 0 else 0.0
-                    if h.offer == 0:
-                        income += h.exported * p_exp  # surplus not offered is exported on its own
-                else:
-                    cost, income = h.imported * p_imp, h.exported * p_exp
-                h.book(cost, income)
-            return
-
-        p_local = 0.0 if np.isnan(self.local_price) else self.local_price
-        for h in self.households:
-            h.book(h.imported * p_imp + h.bought_local * p_local,
-                   h.exported * p_exp + h.sold_local * p_local)
-        # The battery buys its charge from sellers and sells its discharge to buyers at the local price
-        self.battery_cash_eur += (self.bat_discharge - self.bat_charge) * p_local
-
-    def member_price(self):
-        """Average price a member paid per kWh of deficit this step: the share served
-        locally (market + community battery) at the local price, the rest at p_imp.
-        With no deficits, an extra kWh would come from the local surplus."""
-        p_imp, p_exp = self.import_price, self.export_price
-        if self.pricing == "none":
-            return p_imp
-        if self.pricing == "bill_sharing":
-            return self.local_price if self.bids > 0 else p_exp
-        if self.bids <= 0:
-            return self.local_price if self.supply > 0 else p_imp
-        local_share = (self.traded + self.bat_discharge) / self.bids
-        return local_share * self.local_price + (1 - local_share) * p_imp
-
     def update_flows(self):
         f = self.flows
         hh = list(self.households)
         f["pv"] = sum(h.pv for h in hh)
         f["demand"] = sum(h.demand for h in hh)
         f["self_use"] = sum(h.self_use for h in hh)
-        f["shared"] = self.traded
-        f["battery_charge"] = sum(h.home_charge for h in hh) + self.bat_charge
-        f["battery_discharge"] = sum(h.home_discharge for h in hh) + self.bat_discharge
+        f["shared"] = self.manager.traded
+        f["battery_charge"] = sum(h.home_charge for h in hh) + self.manager.bat_charge
+        f["battery_discharge"] = sum(h.home_discharge for h in hh) + self.manager.bat_discharge
         f["imported"] = sum(h.imported for h in hh)
         f["exported"] = sum(h.exported for h in hh)
         f["lost_load"] = sum(h.lost_load for h in hh)
@@ -417,7 +311,7 @@ class Community(mesa.Model):
         outage_demand = df.loc[outage, "demand"].sum()
         return {
             # savings = reference grid bill - actual grid bill; battery income stays in the community
-            "community_savings_eur": savings.sum() + self.battery_cash_eur,
+            "community_savings_eur": savings.sum() + self.manager.battery_cash_eur,
             "self_sufficiency": (demand - df["imported"].sum() - df["lost_load"].sum()) / demand,
             "self_consumption": (pv - df["exported"].sum() - df["curtailment"].sum()) / pv if pv > 0 else np.nan,
             "peak_import_kw": df["imported"].max(),  # kWh in a 1 h step = mean kW
@@ -430,7 +324,7 @@ class Community(mesa.Model):
             "lost_load_kwh": df["lost_load"].sum(),
             "lost_load_alone_kwh": sum(h.lost_load_alone_kwh for h in hh),
             "curtailment_kwh": df["curtailment"].sum(),
-            "battery_cash_eur": self.battery_cash_eur,
+            "battery_cash_eur": self.manager.battery_cash_eur,
             "members_final": len(self.members),
             "prosumer_members_final": sum(h.is_member and h.is_prosumer for h in hh),
             "member_share_mean": df["n_members"].mean() / len(hh),

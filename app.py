@@ -3,11 +3,12 @@
 Run from the repo root:
     solara run app.py
 
-The model has no spatial grid (ODD section 2), so houses are laid out in rows
-only for display. Tip: set "Steps per frame" to 24 to advance a day per frame.
+Add --no-open to start the server without opening a browser.
+
+The model has no spatial grid (ODD section 2): houses are drawn on a ring
+around the community manager only for display. Tip: set "Steps per frame" to 24 to advance a day per frame.
 """
 
-import math
 import sys
 from pathlib import Path
 
@@ -16,7 +17,7 @@ import numpy as np
 import pandas as pd
 import solara
 from matplotlib.figure import Figure
-from matplotlib.patches import Circle, Polygon, Rectangle
+from matplotlib.patches import Circle, FancyArrowPatch, FancyBboxPatch, Polygon, Rectangle
 from mesa.visualization.solara_viz import ModelController, ModelCreator
 from mesa.visualization.utils import update_counter
 
@@ -78,63 +79,174 @@ def window(model):
     return df, LOCAL_TIME.iloc[model.hour - len(df) + 1:model.hour + 1].to_numpy()
 
 
-def neighbourhood_figure(model):
-    """One house per household, the community battery and the grid connection."""
+def house_glyph(ax, x, y, w, h, color, member):
+    """Small house centred on (x, y): body coloured by state, dark blue roof if it has PV."""
+    alpha = 1.0 if member else 0.4
+    bw, bh = w, w * 0.62
+    base = y - bh / 2 - w * 0.1
+    ax.add_patch(FancyBboxPatch((x - bw / 2, base), bw, bh, boxstyle="round,pad=0,rounding_size=0.008",
+                                facecolor=color, alpha=alpha, edgecolor=INK2, lw=0.7, ls="-" if member else "--",
+                                zorder=4))
+    roof = "#184f95" if h.is_prosumer else "#7a7975"  # dark blue roof = PV panels
+    top = base + bh
+    ax.add_patch(Polygon([(x - bw * 0.62, top), (x, top + w * 0.5), (x + bw * 0.62, top)],
+                         facecolor=roof, alpha=alpha, edgecolor=INK2, lw=0.7, zorder=4))
+    if h.pv > 0.05:  # sun above the roof, larger when the panels produce more
+        ax.add_patch(Circle((x + bw * 0.55, top + w * 0.5), w * (0.12 + 0.1 * min(h.pv / 3, 1)),
+                            facecolor=YELLOW, lw=0, zorder=5))
+    if h.battery is not None:  # home battery gauge next to the right wall
+        gx = x + bw / 2 + w * 0.06
+        ax.add_patch(Rectangle((gx, base), w * 0.12, bh, facecolor="white", edgecolor=INK2, lw=0.5, zorder=4))
+        ax.add_patch(Rectangle((gx, base), w * 0.12, bh * h.battery.soc, facecolor=AQUA, lw=0, zorder=5))
+
+
+def flow_line(ax, a, b, kwh, color, scale, ls="-", alpha=1.0):
+    """Line from a to b, wider for larger flows, with an arrowhead in the middle pointing the way energy flows."""
+    k = min(kwh / scale, 1.0)
+    ax.plot([a[0], b[0]], [a[1], b[1]], color=color, lw=0.6 + 4.0 * k, ls=ls, alpha=alpha,
+            solid_capstyle="round", zorder=2)
+    if kwh > 1e-6:
+        m0 = (a[0] * 0.55 + b[0] * 0.45, a[1] * 0.55 + b[1] * 0.45)
+        m1 = (a[0] * 0.45 + b[0] * 0.55, a[1] * 0.45 + b[1] * 0.55)
+        ax.add_patch(FancyArrowPatch(m0, m1, arrowstyle="-|>", mutation_scale=7 + 6 * k,
+                                     color=color, alpha=alpha, lw=0, zorder=3))
+
+
+def community_figure(model):
+    """Households on a ring around the community manager, which links them to the
+    community battery and to the grid. Lines show this hour's energy flows."""
     hh = sorted(model.households, key=lambda h: (-h.pv_kwp, h.unique_id))
     n = len(hh)
-    cols = math.ceil(math.sqrt(n * 1.6))
-    rows = math.ceil(n / cols)
-
-    fig = Figure(figsize=(7.5, 4.6), facecolor=SURFACE)
-    ax = fig.add_axes([0.0, 0.18, 0.78, 0.74])
-    ax.set_xlim(-0.3, cols)
-    ax.set_ylim(-0.4, rows + 0.1)
-    ax.axis("off")
+    mgr = model.manager
     started = model.steps > 0
+    grid_up = bool(model.grid_available[model.hour]) if started else True
+    night = started and model.flows["pv"] <= 1e-6
 
-    for i, h in enumerate(hh):
-        x, y = i % cols, rows - 1 - i // cols
+    fig = Figure(figsize=(7.6, 7.6), facecolor=SURFACE)
+    ax = fig.add_axes([0.0, 0.09, 1.0, 0.84])
+    ax.set_xlim(-1.45, 1.45)
+    ax.set_ylim(-1.55, 1.62)
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.add_patch(Circle((0, 0), 1.3, facecolor="#e9ecf3" if night else "#fbf6ea", lw=0, zorder=0))
+
+    hub_r = 0.27
+    grid_xy, bat_xy = (0.0, 1.45), (0.0, -1.3)
+
+    # One ring of houses (two staggered rings for large communities), with a gap at the top
+    # for the grid line and one at the bottom for the community battery
+    gap_top, gap_bottom = np.radians(40), np.radians(40 if mgr.battery is not None else 0)
+    two_rings = n > 34
+    arc = 2 * np.pi - gap_top - gap_bottom
+    t = arc * (np.arange(n) + 0.5) / n
+    angles = np.pi / 2 - gap_top / 2 - t - np.where(t > arc / 2, gap_bottom, 0)
+    radii = np.where(np.arange(n) % 2, 1.13, 0.9) if two_rings else np.full(n, 1.0)
+    w = min(0.15, 0.75 * arc / n * (2 if two_rings else 1))
+
+    for h, a, r in zip(hh, angles, radii):
+        x, y = r * np.cos(a), r * np.sin(a)
         color = STATES[house_state(h) if started else "idle"][0]
         member = h.is_member and model.pricing != "none"
-        alpha = 1.0 if member else 0.35
-        ax.add_patch(Rectangle((x + 0.15, y + 0.05), 0.6, 0.45, facecolor=color, alpha=alpha,
-                               edgecolor=INK2, lw=0.8, ls="-" if member else "--"))
-        roof = "#184f95" if h.is_prosumer else "#7a7975"  # dark blue roof = PV panels
-        ax.add_patch(Polygon([(x + 0.08, y + 0.5), (x + 0.45, y + 0.82), (x + 0.82, y + 0.5)],
-                             facecolor=roof, alpha=alpha, edgecolor=INK2, lw=0.8))
-        if started and h.pv > 0.05:  # sun on the roof when the panels produce
-            ax.add_patch(Circle((x + 0.45, y + 0.9), 0.06 + 0.04 * min(h.pv / 3, 1), facecolor=YELLOW, lw=0))
-        if h.battery is not None:  # home battery gauge
-            ax.add_patch(Rectangle((x + 0.8, y + 0.05), 0.08, 0.45, facecolor="none", edgecolor=INK2, lw=0.6))
-            ax.add_patch(Rectangle((x + 0.8, y + 0.05), 0.08, 0.45 * h.battery.soc, facecolor=AQUA, lw=0))
+        house = (x - 0.6 * w * np.cos(a), y - 0.6 * w * np.sin(a))
+        hub = (hub_r * np.cos(a), hub_r * np.sin(a))
+        out_kwh, in_kwh = h.sold_local + h.exported, h.bought_local + h.imported
+        line = dict(ls="-" if member else (0, (2, 2)), alpha=1.0 if member else 0.5)
+        if out_kwh >= in_kwh:
+            flow_line(ax, house, hub, out_kwh, color if out_kwh > 1e-6 else GRID, 3.0, **line)
+        else:
+            flow_line(ax, hub, house, in_kwh, color, 3.0, **line)
+        house_glyph(ax, x, y, w, h, color, member)
 
-    # Community battery and grid status on the right
-    side = fig.add_axes([0.80, 0.18, 0.18, 0.74])
-    side.set_xlim(0, 1)
-    side.set_ylim(0, 1)
-    side.axis("off")
-    grid_up = bool(model.grid_available[model.hour]) if started else True
-    side.text(0.5, 0.97, "Grid", ha="center", va="top", fontsize=10, color=INK, weight="bold")
-    side.text(0.5, 0.89, "connected" if grid_up else "OUTAGE", ha="center", va="top", fontsize=10,
-              color=AQUA if grid_up else RED, weight="bold")
-    side.text(0.5, 0.74, "Community\nbattery", ha="center", va="top", fontsize=9, color=INK, weight="bold")
-    if model.battery is not None:
-        soc = model.battery.soc
-        side.add_patch(Rectangle((0.3, 0.12), 0.4, 0.45, facecolor="none", edgecolor=INK2, lw=1))
-        side.add_patch(Rectangle((0.3, 0.12), 0.4, 0.45 * soc, facecolor=AQUA, lw=0))
-        side.text(0.5, 0.05, f"{soc:.0%} of {model.battery.capacity_kwh:.0f} kWh", ha="center", fontsize=8, color=INK2)
+    # Grid: all exchange with the grid goes through the community's connection point
+    imp, exp = model.flows["imported"], model.flows["exported"]
+    if not grid_up:
+        ax.plot([0, 0], [hub_r, grid_xy[1] - 0.09], color=RED, lw=1.5, ls=(0, (3, 3)), zorder=2)
+        ax.text(0.07, 1.1, "no connection", fontsize=8, color=RED, va="center", zorder=6)
+    elif imp >= exp:
+        flow_line(ax, grid_xy, (0, hub_r), imp, BLUE if imp > 1e-6 else GRID, 25.0)
+        if imp >= 0.05:
+            ax.text(0.07, 1.1, f"import {imp:.1f} kWh", fontsize=8, color=BLUE, va="center", zorder=6)
     else:
-        side.text(0.5, 0.4, "none", ha="center", fontsize=9, color=GRAY)
+        flow_line(ax, (0, hub_r), grid_xy, exp, YELLOW, 25.0)
+        if exp >= 0.05:
+            ax.text(0.07, 1.1, f"export {exp:.1f} kWh", fontsize=8, color="#a87200", va="center", zorder=6)
+    edge = INK2 if grid_up else RED
+    ax.add_patch(FancyBboxPatch((grid_xy[0] - 0.26, grid_xy[1] - 0.085), 0.52, 0.17,
+                                boxstyle="round,pad=0,rounding_size=0.04", facecolor="white", edgecolor=edge,
+                                lw=1.4, zorder=6))
+    ax.text(grid_xy[0], grid_xy[1], "GRID" if grid_up else "GRID OUTAGE", ha="center", va="center",
+            fontsize=9, weight="bold", color=edge, zorder=7)
+
+    # Community battery, held by the manager
+    if mgr.battery is not None:
+        ch, dis = mgr.bat_charge, mgr.bat_discharge
+        top = (bat_xy[0], bat_xy[1] + 0.13)
+        if dis > ch:
+            flow_line(ax, top, (0, -hub_r), dis, AQUA, 15.0)
+            label = f"out {dis:.1f} kWh"
+        else:
+            flow_line(ax, (0, -hub_r), top, ch, AQUA if ch > 1e-6 else GRID, 15.0)
+            label = f"in {ch:.1f} kWh" if ch >= 0.05 else ""
+        bw, bh = 0.2, 0.2
+        x0, y0 = bat_xy[0] - bw / 2, bat_xy[1] - bh / 2
+        ax.add_patch(FancyBboxPatch((x0, y0), bw, bh, boxstyle="round,pad=0,rounding_size=0.02",
+                                    facecolor="white", edgecolor=INK2, lw=1.2, zorder=6))
+        ax.add_patch(Rectangle((x0 + 0.02, y0 + 0.02), bw - 0.04, (bh - 0.04) * mgr.battery.soc,
+                               facecolor=AQUA, lw=0, zorder=7))
+        ax.add_patch(Rectangle((bat_xy[0] - 0.04, y0 + bh), 0.08, 0.025, facecolor=INK2, lw=0, zorder=6))
+        ax.text(x0 + bw + 0.05, bat_xy[1], f"Community battery\n{mgr.battery.soc:.0%} of "
+                f"{mgr.battery.capacity_kwh:.0f} kWh", ha="left", va="center", fontsize=7.5, color=INK2, zorder=7)
+        ax.text(0.07, -0.95, label, fontsize=8, color="#11815a", va="center", zorder=7)
+
+    # Community manager in the centre
+    active = model.pricing != "none"
+    ax.add_patch(Circle((0, 0), hub_r, facecolor=INK if active else "#7a7975", edgecolor="white", lw=2, zorder=8))
+    ax.text(0, 0.085, "Community\nmanager", ha="center", va="center", fontsize=8.5, color="white", weight="bold",
+            zorder=9)
+    if not active:
+        hub_text = "inactive\n(no community)"
+    elif not started:
+        hub_text = model.pricing
+    else:
+        price = "–" if np.isnan(mgr.local_price) else f"{mgr.local_price:.3f} €/kWh"
+        hub_text = f"{price}\n{mgr.traded:.1f} kWh shared"
+    ax.text(0, -0.1, hub_text, ha="center", va="center", fontsize=7.5, color="#d8d7d0", zorder=9)
 
     title = LOCAL_TIME.iloc[model.hour].strftime("%a %d %b %Y, %H:00") if started else "Not started"
-    fig.text(0.01, 0.96, title, fontsize=12, weight="bold", color=INK)
+    fig.text(0.03, 0.965, title, fontsize=13, weight="bold", color=INK)
+    if started:
+        fig.text(0.97, 0.965, "night" if night else "daylight", fontsize=9, color=INK2, ha="right")
     handles = [Rectangle((0, 0), 1, 1, facecolor=c) for c, _ in STATES.values()]
     labels = [lab for _, lab in STATES.values()]
     handles += [Polygon([(0, 0), (0.5, 1), (1, 0)], facecolor="#184f95"),
                 Rectangle((0, 0), 1, 1, facecolor="white", edgecolor=INK2, ls="--")]
-    labels += ["roof with PV", "not a member (faded)"]
-    fig.legend(handles, labels, loc="lower center", ncol=4, fontsize=7.5, frameon=False, labelcolor=INK2)
+    labels += ["roof with PV", "not a member (grid prices)"]
+    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.025), ncol=4, fontsize=7.5,
+               frameon=False, labelcolor=INK2)
+    fig.text(0.5, 0.012, "Line width = energy this hour; arrows show the direction of flow", ha="center",
+             fontsize=7.5, color=GRAY)
     return fig
+
+
+def ManagerPanel(model):
+    """What the community manager did in the current hour."""
+    if model.steps == 0:
+        return solara.Markdown("")
+    if model.pricing == "none":
+        return solara.Markdown("#### Community manager, this hour\n\n"
+                               "No community: every household trades with the grid on its own.")
+    mgr = model.manager
+    rows = [
+        ("Offers from members (surplus)", f"{mgr.supply:.1f} kWh"),
+        ("Bids from members (deficit)", f"{mgr.bids:.1f} kWh"),
+        ("Matched locally", f"{mgr.traded:.1f} kWh"),
+        ("Community battery in / out",
+         f"{mgr.bat_charge:.1f} / {mgr.bat_discharge:.1f} kWh" if mgr.battery else "no battery"),
+        ("Grid import / export", f"{model.flows['imported']:.1f} / {model.flows['exported']:.1f} kWh"),
+        (f"Local price ({model.pricing})", "–" if np.isnan(mgr.local_price) else f"{mgr.local_price:.3f} EUR/kWh"),
+    ]
+    table = "\n".join(f"| {k} | **{v}** |" for k, v in rows)
+    return solara.Markdown(f"#### Community manager, this hour\n\n| Step | Value |\n|---|---|\n{table}")
 
 
 def energy_figure(model):
@@ -185,7 +297,7 @@ def Indicators(model):
     df = model.datacollector.get_model_vars_dataframe()
     hh = list(model.households)
     demand, pv = df["demand"].sum(), df["pv"].sum()
-    savings = sum(h.savings_eur for h in hh) + model.battery_cash_eur
+    savings = sum(h.savings_eur for h in hh) + model.manager.battery_cash_eur
     pros = [h.savings_eur for h in hh if h.is_prosumer]
     cons = [h.savings_eur for h in hh if not h.is_prosumer]
     rows = [
@@ -235,8 +347,10 @@ def Dashboard(model):
     """Main panels, redrawn after every step."""
     update_counter.get()  # re-render when Mesa signals a new step
     with solara.Columns([3, 2]):
-        solara.FigureMatplotlib(neighbourhood_figure(model), format="png")
-        Indicators(model)
+        solara.FigureMatplotlib(community_figure(model), format="png")
+        with solara.Column():
+            ManagerPanel(model)
+            Indicators(model)
     with solara.Columns([1, 1]):
         solara.FigureMatplotlib(energy_figure(model), format="png")
         solara.FigureMatplotlib(price_figure(model), format="png")

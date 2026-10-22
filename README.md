@@ -15,7 +15,7 @@ Modelling & Simulation, FEUP, 2026-27 (Theme 12). Full specification in
 data/raw/            original downloads, untouched
 data/processed/      hourly inputs for the model (8,760 rows, year 2023)
 scripts/             data download and preparation
-model/               Mesa model (agents.py, model.py)
+model/               Mesa model (agents.py, manager.py, model.py, battery.py)
 experiments/         batch_run scripts; results/ holds their output
 notebooks/           analysis and plots
 docs/ODD.md          model documentation (ODD protocol)
@@ -37,7 +37,7 @@ python scripts/get_pvgis.py       # PVGIS hourly PV yield -> data/processed/pv_p
 python scripts/prep_load.py       # E-REDES BTN C profile  -> data/processed/load_btn_c.csv
 
 # 3a. Interactive visualisation (Mesa + Solara), opens in the browser
-solara run app.py                 # or: python -m solara run app.py
+solara run app.py                 # or: python -m solara run app.py  (--no-open: no browser)
 
 # 3b. Run the baseline community for one year and print its KPIs
 python -m experiments.run_baseline --seed 42
