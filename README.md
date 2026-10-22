@@ -36,7 +36,10 @@ pip install -r requirements.txt
 python scripts/get_pvgis.py       # PVGIS hourly PV yield -> data/processed/pv_porto.csv
 python scripts/prep_load.py       # E-REDES BTN C profile  -> data/processed/load_btn_c.csv
 
-# 3. Run the baseline community for one year and print its KPIs
+# 3a. Interactive visualisation (Mesa + Solara), opens in the browser
+solara run app.py                 # or: python -m solara run app.py
+
+# 3b. Run the baseline community for one year and print its KPIs
 python -m experiments.run_baseline --seed 42
 ```
 
