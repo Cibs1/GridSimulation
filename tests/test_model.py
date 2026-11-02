@@ -38,6 +38,7 @@ def test_reference_is_shared_across_scenarios(reference):
     assert [h.pv_kwp for h in a] == [h.pv_kwp for h in b]
     assert all(np.array_equal(x.base_demand, y.base_demand) for x, y in zip(a, b))
     assert np.array_equal(reference.grid_available, other.grid_available)
+    assert reference.weather_year == other.weather_year
 
 
 def test_same_seed_reproduces_results():
@@ -81,8 +82,12 @@ def test_demand_response_keeps_daily_totals():
 
 
 def test_price_responsive_dr_lowers_rebound_peak():
-    """Spreading load over cheaper hours avoids everyone piling into the same hours."""
-    assert run(flexibility=0.2).kpis()["peak_import_kw"] < 38
+    """Spreading load over cheaper hours avoids everyone piling into the same hours.
+
+    Checked on the 2023 weather: in other years a sunny day followed by a cloudy
+    one can still create a midday rebound peak, because the forecast is wrong.
+    """
+    assert run(flexibility=0.2, weather_year=2023).kpis()["peak_import_kw"] < 38
 
 
 def test_dynamic_price_bounds():
@@ -124,6 +129,39 @@ def test_shared_battery_reduces_lost_load():
     alone = run(outage_rate=20, pricing="none").kpis()["lost_load_kwh"]
     shared = run(outage_rate=20, storage_mode="shared", storage_kwh=100).kpis()["lost_load_kwh"]
     assert shared < alone
+
+
+def test_weather_year_varies_with_seed_and_can_be_fixed():
+    years = {Community(rng=s).weather_year for s in range(10)}
+    assert len(years) > 1
+    m = Community(rng=1, weather_year=2023)
+    assert m.weather_year == 2023 and m.pv_yield.sum() == pytest.approx(1520, rel=0.01)
+    with pytest.raises(ValueError):
+        Community(rng=1, weather_year=1990)
+
+
+def test_no_temperature_effect_keeps_annual_demand():
+    m = Community(rng=1, heat_sensitivity=0, cool_sensitivity=0)
+    assert np.all(m.demand_factor == 1)
+    for h in m.households:
+        assert h.base_demand.sum() == pytest.approx(h.annual_kwh)
+
+
+def test_colder_than_usual_days_raise_demand():
+    """Demand goes up on days colder than the average climate, and down on milder ones (winter)."""
+    m = Community(rng=1, weather_year=2023)
+    day_index = np.cumsum(m.local_hour == 0) - 1
+    winter = day_index < 59  # January and February
+    daily_t = np.bincount(day_index, weights=m.temperature) / np.bincount(day_index)
+    factor = np.bincount(day_index, weights=m.demand_factor) / np.bincount(day_index)
+    cold, mild = np.argmin(daily_t[:59]), np.argmax(daily_t[:59])
+    assert factor[cold] > factor[mild]
+    assert 0.8 < m.demand_factor[winter].mean() < 1.2
+
+
+def test_relative_savings():
+    assert run(pricing="none").kpis()["relative_savings"] == pytest.approx(0, abs=1e-9)
+    assert 0 < run(pricing="mid_market").kpis()["relative_savings"] < 1
 
 
 def test_battery_limits_and_losses():

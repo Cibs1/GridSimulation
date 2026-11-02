@@ -1,6 +1,8 @@
-# Community Microgrid ABM — ODD Protocol (Draft v0.3)
+# Community Microgrid ABM — ODD Protocol (Draft v0.4)
 
-Oct 22, 2026 · @Ricardo
+Nov 2, 2026 · @Ricardo, @Guilherme
+
+Changes since v0.3 (proposal, Nov 2): the weather is now a stochastic input — each run draws one of ten real PVGIS years for Porto (2014–2023), with PV yield and air temperature; household demand responds to days colder or hotter than usual (heating/cooling degree-days relative to the average climate); new KPI **relative savings**; research questions reduced to three (pricing, relative savings, resilience), with demand response kept as an extension.
 
 Changes since v0.2 (Oct 21): the local market, community battery and billing are
 run by a new **CommunityManager** agent instead of the model itself. Behaviour and
@@ -19,10 +21,11 @@ The model tests which local energy-sharing and pricing rules give a residential 
 
 **Research questions**
 
-1. **Pricing:** Which internal pricing mechanism (fixed price, mid-market, supply–demand ratio, dynamic, bill-sharing) maximises total savings versus no community when households can leave a community that does not pay off, and how fairly are the savings split?
-2. **Storage:** Does one shared community battery beat the same total capacity spread across individual home batteries, in self-sufficiency and cost?
-3. **Flexibility:** How much does price-responsive demand response (shifting flexible load to cheaper hours) add on top of sharing, and what does it do to the peak grid import?
-4. **Resilience:** During a grid outage, what share of demand can the community cover, and how does that change with community size and the PV/storage mix?
+1. **Pricing:** Which internal pricing mechanism (fixed price, mid-market, supply–demand ratio, dynamic, bill-sharing) is best for the community: the largest total savings versus no community when households can leave a community that does not pay off, and the fairest split of those savings?
+2. **Relative savings:** How much do households save, as a share of what they would pay without a community, and how does this differ between households with and without PV and change with the share of PV households and with storage (shared vs individual)?
+3. **Resilience:** During a grid outage, what share of demand can the community cover, and how does that change with community size and the PV/storage mix?
+
+*Extension (if time allows):* how much price-responsive demand response adds on top of sharing, and what it does to the peak grid import.
 
 **Patterns the model must reproduce** (checked during validation)
 
@@ -51,6 +54,7 @@ The model has two agent types: the **Household** (many) and the **CommunityManag
 | Battery | `capacity_kwh`, `soc`, `p_max_kw` (= C-rate × capacity), round-trip efficiency | kWh, 0–1, kW, – | static / dynamic |
 | Grid | `import_price`, `export_price` | €/kWh | input, flat |
 | Grid | `grid_available` (false during an outage) | bool per hour | generated at start |
+| Community | `weather_year`, `pv_yield` (kWh per kWp), `temperature` (°C), `demand_factor` (temperature effect on demand) | –, kWh/kWp, °C, – | drawn at start, hourly series |
 | Community | `pricing`, `storage_mode` (none / individual / shared), `storage_kwh`, `membership` | – | scenario parameter |
 | CommunityManager | `supply`, `bids`, `traded` (members' offers, bids and energy matched locally this step) | kWh | dynamic |
 | CommunityManager | `battery` (the community battery, only in the "shared" storage mode), `fixed_price` | –, €/kWh | static |
@@ -60,7 +64,7 @@ The model has two agent types: the **Household** (many) and the **CommunityManag
 
 **Scales**
 
-- **Time step:** 1 hour. **Horizon:** 1 year (8,760 steps, 2023, a non-leap year), so seasonal variation is captured. Steps are indexed in UTC; rules that depend on the time of day use Portuguese legal time (Europe/Lisbon), so the daylight-saving changes are handled correctly.
+- **Time step:** 1 hour. **Horizon:** 1 year (8,760 steps on the 2023 calendar, a non-leap year), so seasonal variation is captured. The weather of the run comes from one of the years 2014–2023, laid on that calendar by day of year and hour. Steps are indexed in UTC; rules that depend on the time of day use Portuguese legal time (Europe/Lisbon), so the daylight-saving changes are handled correctly.
 - **Space:** not explicit. All households sit behind one connection point, and grid losses and line limits are ignored.
 - **Size:** 20–50 households (baseline 30).
 
@@ -68,7 +72,7 @@ The model has two agent types: the **Household** (many) and the **CommunityManag
 
 Each hourly step runs the same processes in a fixed order. Households act in random order (`model.agents.shuffle_do`) where order matters.
 
-1. **Update environment:** read this hour's PV yield and demand, and grid availability from the outage schedule. At local midnight, update the price forecast with yesterday's effective prices.
+1. **Update environment:** read this hour's PV yield (of the run's weather year) and demand, and grid availability from the outage schedule. At local midnight, update the price forecast with yesterday's effective prices.
 2. **Membership (every 30 days, at local midnight):** households may leave or join depending on their recent savings (7.6). Off in the baseline.
 3. **Demand response (daily, at local midnight):** flexible households plan today's load shift from the price forecast (7.4).
 4. **Self-consumption:** each household covers its own demand from its PV, then charges or discharges its home battery (if any), and computes its net position: surplus or deficit (7.1).
@@ -92,7 +96,7 @@ Community-level self-sufficiency, savings, fairness and size *emerge* from house
 | Prediction | Prices: exponentially smoothed effective price per hour of day from past days (weight 0.3 on the latest day). PV (for non-members' demand response): persistence, today = yesterday. |
 | Sensing | Households know their own state, the community's price forecast and, for membership decisions, the average recent savings of members of their own type (prosumer or consumer), as a community would publish them. They do not see other households' individual data. |
 | Interaction | Households interact only through the CommunityManager: they send it offers and bids, and it returns matched energy, the price and the bill. There is no direct household-to-household negotiation. |
-| Stochasticity | Demand noise and peak shift, PV sizes, annual demand, demand-response thresholds, initial members, outage start and duration, cooperation draws, membership draws, activation order. Weather is the real 2023 series. Controlled by the model seed; outages use a separate random stream so that changing outage parameters does not change the population. |
+| Stochasticity | Demand noise and peak shift, PV sizes, annual demand, demand-response thresholds, initial members, outage start and duration, cooperation draws, membership draws, activation order. Weather: one real PVGIS year (2014–2023) of PV yield and temperature, drawn per run. Controlled by the model seed; outages and the weather year use separate random streams, so changing outage or other scenario parameters does not change the population or the weather. |
 | Collectives | The community itself; prosumers versus consumers for reporting. |
 | Observation | Per step: energy flows (PV, demand, self-use, shared, battery charge and discharge, imported, exported, lost load, curtailment), local and effective price, storage SoC, number of members. Per run: KPIs in section 8. |
 
@@ -107,6 +111,8 @@ The baseline starts on 1 January 2023 with 30 households and every battery at 50
 | PV size per prosumer | 2–5 kWp (uniform) | – |
 | Annual demand per household | 2,500–5,000 kWh (uniform) | – |
 | Demand noise | hourly multiplicative noise, standard deviation 10–20% (uniform per household); profile shifted by −1, 0 or +1 h | – |
+| Weather year | drawn per seed from 2014–2023 (uniform) | can be fixed (e.g. 2023) |
+| Temperature effect | ±2% demand per heating degree-day (base 15 °C) or cooling degree-day (base 22 °C) above/below the average climate for that day | 0 / 4% |
 | Pricing mechanism | mid-market | all six (7.3) |
 | Grid prices | import 0.20 €/kWh, export 0.05 €/kWh, flat (placeholders) | export 0.03 / 0.08 |
 | Fixed local price | 0.10 €/kWh | – |
@@ -124,11 +130,12 @@ Household attributes are drawn from the seeded `model.random` and `model.rng`, s
 
 ## 6. Input data
 
-Two hourly time series drive the model. They are prepared once by scripts, saved as CSV (8,760 rows each, indexed by the start of the hour in UTC, with local time alongside), and read at start-up. The model never calls an external API.
+Hourly time series drive the model. They are prepared once by scripts, saved as CSV (8,760 rows per series, on the 2023 hourly timeline), and read at start-up. The model never calls an external API.
 
 | Input | Source | Processing |
 | --- | --- | --- |
 | PV yield per kWp, Porto | [PVGIS v5.3](https://re.jrc.ec.europa.eu/pvg_tools/en/) (EU JRC), PVGIS-SARAH3, lat 41.15, lon −8.61, year 2023, optimal angles (35°, azimuth 3°), 14% system losses | `scripts/get_pvgis.py`: hourly power of a 1 kWp system (W) → kWh per kWp. Annual yield 1,520 kWh/kWp. Scaled by each household's `pv_kwp`. |
+| Weather years, Porto: PV yield per kWp and air temperature | PVGIS v5.3, PVGIS-SARAH3 (radiation) and ERA5 (temperature), same point, losses and panel angles (35°, azimuth 3°) as above, years 2014–2023 | `scripts/get_weather.py`: hourly P → kWh per kWp and T2m → `temp_c`; each year laid on the 2023 hourly timeline by day of year and hour (29 February dropped in leap years), saved to `data/processed/weather_porto.csv` (8,760 rows per year). Annual yield 1,386–1,593 kWh/kWp; mean temperature 15.1–16.0 °C. The 2023 year matches `pv_porto.csv` to within 0.05 kWh/kWp per year. |
 | Household load shape | [E-REDES](https://www.e-redes.pt/pt-pt/perfis-de-consumo) / ERSE standard profile **BTN C** for 2023 (low-voltage residential, ≤13.8 kVA, ≤7,140 kWh/yr), 15-min, legal time | `scripts/prep_load.py`: quarter-hours summed to hours and normalised to sum to 1. Scaled by each household's annual demand, with noise and shift added in the model (section 5). |
 | Grid import and export prices | Portuguese regulated tariffs ([ERSE](https://www.erse.pt/)) | Placeholders until decided (flat 0.20 / 0.05 €/kWh). |
 | Outage events | Generated inside the model | See 7.5. |
@@ -144,6 +151,14 @@ For household *i* at step *t*, with PV yield per kWp *y(t)* and demand *d\_i(t)*
 ```latex
 n_i(t) = pv_i \cdot y(t) - d_i(t)
 ```
+
+Demand *d\_i(t)* is the household's hourly profile (section 5) times the run's **temperature factor**. The BTN C profile already contains the average seasonal effect of temperature, so only the deviation from the usual climate is applied, per local day *k*:
+
+```latex
+f(k) = 1 + \beta_h \, (HDD_k - \overline{HDD}_k) + \beta_c \, (CDD_k - \overline{CDD}_k)
+```
+
+with HDD\_k = max(0, 15 °C − daily mean temperature), CDD\_k = max(0, daily mean − 22 °C), the bars the average over the ten weather years for the same day, and β\_h = β\_c = 0.02 (a starting assumption, varied in E5). A colder-than-usual winter day raises demand, a mild one lowers it, and a typical day leaves it unchanged, so annual demand is `annual_kwh` in a typical year and varies a little with the weather year.
 
 The household first uses its own PV (self-use = min(PV, demand)). If *n\_i* > 0 it charges its home battery (if any), and offers the rest to the community with probability `cooperation` (if it is a member; otherwise the rest is exported). If *n\_i* < 0 it discharges its home battery, then bids for the rest (members) or imports it.
 
@@ -210,13 +225,14 @@ Each scenario runs 30 times with seeds 0–29 (`experiments/run_experiments.py`,
 
 | KPI | Definition | Answers |
 | --- | --- | --- |
-| Community savings | Σ households (reference bill − actual bill) + community battery income, €/year; equals reference grid bill − actual grid bill | RQ1–3 |
+| Community savings | Σ households (reference bill − actual bill) + community battery income, €/year; equals reference grid bill − actual grid bill | RQ1, RQ2 |
+| Relative savings | community savings / Σ households' reference bills, % | RQ2 |
 | Self-sufficiency | (demand − imported − lost load) / demand, % | RQ2, RQ3 |
 | Self-consumption | (PV − exported − curtailment) / PV, % | RQ2 |
-| Peak grid import | highest hourly import, kW | RQ2, RQ3 |
+| Peak grid import | highest hourly import, kW | RQ2, extension |
 | Fairness | Gini coefficient of per-household savings (0 = equal; can exceed 1 when some savings are negative), mean savings of prosumers and consumers | RQ1 |
 | Membership | average share of households in the community over the year; members and prosumer members at the end; number of leaves and joins | RQ1 |
-| Resilience | share of demand served during outages, %; lost load, kWh (and lost load of the reference); curtailment, kWh | RQ4 |
+| Resilience | share of demand served during outages, %; lost load, kWh (and lost load of the reference); curtailment, kWh | RQ3 |
 
 **Experiment design** (`experiments/designs.py`)
 
@@ -227,7 +243,7 @@ Each scenario runs 30 times with seeds 0–29 (`experiments/run_experiments.py`,
 | E2 | Storage: none vs. individual vs. shared, same total 50 / 100 / 200 kWh | 7 |
 | E3 | Demand response: flexibility 0 / 0.1 / 0.2 × mid-market, SDR, dynamic | 9 |
 | E4 | Resilience: 3 outage regimes (4/yr 1–8 h, 12/yr 1–8 h, 4/yr 4–12 h) × no / individual / shared 100 kWh storage × 20 / 30 / 50 households | 27 |
-| E5 | Sensitivity (one at a time, around mid-market + 100 kWh shared battery): cooperation 0.5 / 0.75, battery efficiency 80% / 95%, export price 0.03 / 0.08 €/kWh | 7 |
+| E5 | Sensitivity (one at a time, around mid-market + 100 kWh shared battery): cooperation 0.5 / 0.75, battery efficiency 80% / 95%, export price 0.03 / 0.08 €/kWh, temperature sensitivity 0 / 4% | 9 |
 
 **Statistics** (`experiments/stats.py`, `notebooks/02_experiments.ipynb`): Shapiro–Wilk and Levene checks, one-way ANOVA and Kruskal–Wallis (used as the robust test when normality or equal variances fail) to compare scenarios, Tukey HSD for pairs, and, because scenarios share seeds, paired t-tests and Wilcoxon signed-rank tests on seed-matched differences for direct two-scenario comparisons. A replication check reports the largest relative CI half-width per KPI to confirm that 30 replications give narrow enough intervals.
 
@@ -239,7 +255,9 @@ PV + import + discharge + lost load = demand + export + charge + curtailment
 
 **Open decisions**
 
-- [ ] Final 2–3 research questions to keep (four may be too many for the timeline)
+- [x] Final research questions: pricing, relative savings, resilience (v0.4 proposal; demand response as an extension)
+- [ ] Rerun the experiments with the v0.4 model (the CSVs in `experiments/results/` are still from v0.3, weather year 2023 only)
+- [ ] Justify the temperature sensitivity (2% per degree-day) with a source
 - [ ] Exact tariff values and whether to use time-of-use pricing
 - [ ] Justify the participation threshold and *p\_leave* / *p\_join* (e.g. real Portuguese energy-community fees); add them to the sensitivity analysis
 - [ ] Outage reserve for the community battery (minimum SoC) as a resilience policy

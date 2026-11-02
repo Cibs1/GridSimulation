@@ -29,13 +29,43 @@ STORAGE_MODES = ("none", "shared", "individual")
 
 @lru_cache(maxsize=1)
 def load_inputs():
-    """Hourly PV yield per kWp, BTN C load shape and local hour of day (read once per process)."""
+    """BTN C load shape, local hour of day and the weather years (read once per process).
+
+    Returns (load_shape, local_hour, weather), where weather maps each year to
+    a pair of hourly arrays (pv_kwh_per_kwp, temp_c) on the 2023 timeline.
+    """
     pv = pd.read_csv(DATA_DIR / "pv_porto.csv")
     load = pd.read_csv(DATA_DIR / "load_btn_c.csv")
     if not (pv["time_utc"] == load["time_utc"]).all():
         raise ValueError("PV and load files are not aligned")
     local_hour = pd.to_datetime(pv["time_utc"], utc=True).dt.tz_convert("Europe/Lisbon").dt.hour
-    return pv["pv_kwh_per_kwp"].to_numpy(), load["load_per_annual_kwh"].to_numpy(), local_hour.to_numpy()
+    w = pd.read_csv(DATA_DIR / "weather_porto.csv")
+    weather = {
+        int(year): (g["pv_kwh_per_kwp"].to_numpy(), g["temp_c"].to_numpy())
+        for year, g in w.sort_values(["year", "hour"]).groupby("year")
+    }
+    return load["load_per_annual_kwh"].to_numpy(), local_hour.to_numpy(), weather
+
+
+def temperature_factor(temp_c, all_temps, day_index, heat_base, cool_base, heat_sens, cool_sens):
+    """Hourly demand multiplier from how much colder or hotter each day is than usual (submodel 7.1).
+
+    The BTN C profile already contains the average seasonal effect of
+    temperature, so only the deviation from the average climate is applied:
+    heating and cooling degree-days of this year minus those of the average
+    over all weather years, for the same day. A colder-than-usual winter day
+    raises demand, a mild one lowers it; a typical day leaves it unchanged.
+    """
+    def degree_days(t):  # daily mean temperature -> (heating, cooling) degree-days
+        daily = np.bincount(day_index, weights=t) / np.bincount(day_index)
+        return np.clip(heat_base - daily, 0, None), np.clip(daily - cool_base, 0, None)
+
+    hdd, cdd = degree_days(temp_c)
+    clim = [degree_days(t) for t in all_temps]
+    hdd_clim = np.mean([h for h, _ in clim], axis=0)
+    cdd_clim = np.mean([c for _, c in clim], axis=0)
+    daily = 1 + heat_sens * (hdd - hdd_clim) + cool_sens * (cdd - cdd_clim)
+    return np.clip(daily, 0, None)[day_index]
 
 
 def outage_schedule(rng, rate_per_year, duration_range):
@@ -92,6 +122,11 @@ class Community(mesa.Model):
         battery_efficiency=0.9,  # round trip
         outage_rate=4.0,  # outages per year
         outage_duration=(1, 8),  # hours, inclusive
+        weather_year=None,  # None: drawn per seed from the available years; or a year, e.g. 2023
+        heat_sensitivity=0.02,  # extra demand per heating degree-day above the usual (0 = no temperature effect)
+        cool_sensitivity=0.02,  # extra demand per cooling degree-day above the usual
+        heat_base=15.0,  # deg C, daily mean below which homes heat
+        cool_base=22.0,  # deg C, daily mean above which homes cool
         check_balance=True,
         rng=None,
     ):
@@ -101,8 +136,9 @@ class Community(mesa.Model):
         if storage_mode not in STORAGE_MODES:
             raise ValueError(f"storage_mode must be one of {STORAGE_MODES}")
 
-        self.pv_yield, self.load_shape, self.local_hour = load_inputs()
+        self.load_shape, self.local_hour, weather = load_inputs()
         self.day_starts = np.flatnonzero(self.local_hour == 0)
+        day_index = np.cumsum(self.local_hour == 0) - 1  # local day of each hour (the year starts at local midnight)
 
         self.pricing = pricing
         self.import_price = import_price
@@ -119,6 +155,21 @@ class Community(mesa.Model):
         # parameters does not change the household population (common random numbers).
         outage_rng = np.random.default_rng(self.rng.integers(2**63))
         self.grid_available = outage_schedule(outage_rng, outage_rate, outage_duration)
+
+        # Weather year (ODD 6): its own stream too, so every scenario with the same
+        # seed gets the same year, whatever its other parameters.
+        weather_rng = np.random.default_rng(self.rng.integers(2**63))
+        years = sorted(weather)
+        if weather_year is None:
+            weather_year = int(weather_rng.choice(years))
+        elif weather_year not in weather:
+            raise ValueError(f"weather_year must be one of {years}")
+        self.weather_year = weather_year
+        self.pv_yield, self.temperature = weather[weather_year]
+        self.demand_factor = temperature_factor(
+            self.temperature, [t for _, t in weather.values()], day_index,
+            heat_base, cool_base, heat_sensitivity, cool_sensitivity,
+        )
 
         # Population: exactly round(n * pv_share) prosumers, chosen at random
         n_pv = round(n_households * pv_share)
@@ -167,6 +218,7 @@ class Community(mesa.Model):
         self.datacollector = mesa.DataCollector(
             model_reporters={
                 "hour_of_day": lambda m: int(m.local_hour[m.hour]),
+                "temperature": lambda m: float(m.temperature[m.hour]),
                 "grid_available": lambda m: bool(m.grid_available[m.hour]),
                 "local_price": lambda m: m.manager.local_price,
                 **{k: (lambda m, k=k: m.flows[k]) for k in self.flows},
@@ -309,9 +361,14 @@ class Community(mesa.Model):
         demand, pv = df["demand"].sum(), df["pv"].sum()
         outage = ~df["grid_available"].to_numpy(dtype=bool)
         outage_demand = df.loc[outage, "demand"].sum()
+        community_savings = savings.sum() + self.manager.battery_cash_eur
+        bill_alone = sum(h.bill_alone_eur for h in hh)
         return {
+            "weather_year": self.weather_year,
             # savings = reference grid bill - actual grid bill; battery income stays in the community
-            "community_savings_eur": savings.sum() + self.manager.battery_cash_eur,
+            "community_savings_eur": community_savings,
+            # the same savings as a share of what the households would pay without a community
+            "relative_savings": community_savings / bill_alone if bill_alone > 0 else np.nan,
             "self_sufficiency": (demand - df["imported"].sum() - df["lost_load"].sum()) / demand,
             "self_consumption": (pv - df["exported"].sum() - df["curtailment"].sum()) / pv if pv > 0 else np.nan,
             "peak_import_kw": df["imported"].max(),  # kWh in a 1 h step = mean kW

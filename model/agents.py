@@ -11,7 +11,8 @@ class Household(mesa.Agent):
 
     The household's hourly base demand for the whole year is built once at
     creation from the shared BTN C shape (ODD section 5): scaled to its annual
-    demand, shifted by a few hours and multiplied by hourly noise. Demand
+    demand, shifted by a few hours, multiplied by hourly noise and by the
+    weather year's temperature factor (colder or hotter days than usual). Demand
     response may move load within a day, so `demand_profile` (what is actually
     consumed) can differ from `base_demand` while daily totals stay the same.
     """
@@ -29,7 +30,9 @@ class Household(mesa.Agent):
 
         shape = np.roll(model.load_shape, shift_h)
         noisy = shape * np.clip(1 + model.rng.normal(0, noise_sd, len(shape)), 0, None)
-        self.base_demand = noisy * annual_kwh / noisy.sum()  # kWh per hour, sums to annual_kwh
+        typical = noisy * annual_kwh / noisy.sum()  # kWh per hour in a typical year, sums to annual_kwh
+        # Days colder or hotter than usual in this weather year raise or lower demand (7.1)
+        self.base_demand = typical * model.demand_factor
         self.demand_profile = self.base_demand.copy()
 
         self._init_reference(model)

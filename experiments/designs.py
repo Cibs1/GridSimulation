@@ -2,7 +2,11 @@
 
 Each design maps a scenario label to the Community parameters that differ
 from the baseline. Every scenario runs with the same seeds, so scenarios are
-paired by seed (common random numbers: same households, weather and outages).
+paired by seed (common random numbers: same households, weather year and outages).
+
+Main research questions (ODD v0.4): RQ1 pricing -> E1, E1b; RQ2 relative
+savings -> E1, E2; RQ3 resilience -> E4. E3 (demand response) is kept as an
+extension and E5 checks robustness.
 """
 
 SEEDS = range(30)
@@ -83,6 +87,8 @@ def sensitivity():
         scenarios[f"efficiency {e}"] = {**base, "battery_efficiency": e}
     for p in [0.03, 0.08]:
         scenarios[f"export price {p}"] = {**base, "export_price": p}
+    for s in [0.0, 0.04]:
+        scenarios[f"temperature sensitivity {s}"] = {**base, "heat_sensitivity": s, "cool_sensitivity": s}
     return scenarios
 
 
