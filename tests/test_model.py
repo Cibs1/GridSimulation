@@ -53,6 +53,15 @@ def test_community_savings_equal_grid_bill_reduction(reference, pricing, storage
     assert model.kpis()["community_savings_eur"] == pytest.approx(expected, rel=1e-9, abs=1e-6)
 
 
+def test_panel_and_sharing_savings_add_up_to_bill_reduction():
+    """Panels' own saving + sharing saving = bill with no PV and no community - actual grid bill."""
+    model = run(pv_share=0.6, storage_mode="shared", storage_kwh=100)
+    k = model.kpis()
+    total = k["panel_savings_eur"] + k["community_savings_eur"]
+    assert total == pytest.approx(k["no_pv_bill_eur"] - grid_bill(model), rel=1e-9)
+    assert k["panel_savings_eur"] > 0
+
+
 def test_pricing_redistributes_but_does_not_change_total():
     """Without storage or demand response, energy flows do not depend on the price rule."""
     totals = {p: run(pricing=p, outage_rate=0).kpis()["community_savings_eur"] for p in PRICING_MECHANISMS[1:]}

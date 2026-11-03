@@ -227,6 +227,7 @@ Each scenario runs 30 times with seeds 0–29 (`experiments/run_experiments.py`,
 | --- | --- | --- |
 | Community savings | Σ households (reference bill − actual bill) + community battery money not paid to any household, €/year; equals reference grid bill − actual grid bill | RQ1–3 |
 | Storage | energy paid for from the community battery, €; energy lost in all batteries, kWh | RQ2 |
+| Value of PV | panels' own saving: Σ households (bill with no PV and no community − bill alone with PV), €/year; added to community savings it gives the total saving against a neighbourhood with no PV and no community | RQ1, RQ2 |
 | Self-sufficiency | (demand − imported − lost load) / demand, % | RQ2, RQ3 |
 | Self-consumption | (PV − exported − curtailment) / PV, % | RQ2 |
 | Peak grid import | highest hourly import, kW | RQ2, RQ3 |
@@ -240,6 +241,7 @@ Each scenario runs 30 times with seeds 0–29 (`experiments/run_experiments.py`,
 | --- | --- | --- |
 | E1 | Pricing: 6 mechanisms × PV share 0/20/40/60/80/100%, membership on (threshold 0 €) | 36 |
 | E1b | Pricing × membership threshold 0 / 2 / 5 € per 30 days, 40% PV | 18 |
+| E1c | Value of PV: PV share 0–100% × community without / with a 100 kWh shared battery (mid-market, all members); total saving vs no PV split into panels, sharing and battery | 12 |
 | E2 | Storage: none vs. individual vs. shared, same total 50 / 100 / 200 kWh | 7 |
 | E2b | Pricing with storage: fixed, mid-market, SDR, dynamic, bill-sharing, each with a 100 kWh shared battery | 5 |
 | E3 | Demand response: flexibility 0 / 0.1 / 0.2 × mid-market, SDR, dynamic | 9 |

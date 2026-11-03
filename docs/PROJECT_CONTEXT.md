@@ -125,7 +125,7 @@ Dynamic pricing with a shared battery is the fairest combination (every Tukey pa
 
 **6. The participation cost decides whether membership matters.** At 0 € only bill-sharing loses members; at 2 € SDR too; at 5 € every mechanism loses members (savings −12% to −22% for fixed, mid-market and dynamic; −55% for SDR) (E1b). An earlier version compared the 30-day savings over hours shifted by one, which made a few prosumers with near-zero savings leave by mistake; this is fixed and covered by a test.
 
-**7. More PV lowers total savings.** E1: 2,324 €/yr at 20% PV, 2,297 at 40%, 1,713 at 60%, 919 at 80% (same for fixed, mid-market, SDR and dynamic). With more prosumers there are fewer deficits to sell to, and the extra surplus is exported at p_exp anyway.
+**7. The value of sharing peaks at 20–40% PV and vanishes at both ends** (E1: 0 €/yr at 0% PV, 2,324 at 20%, 2,297 at 40%, 1,713 at 60%, 919 at 80%, 70 at 100%; same for fixed, mid-market, SDR and dynamic). These savings are measured against each household alone with its own panels, so they capture only the gain from sharing: with no PV there is nothing to share, and with PV on every roof everyone has a surplus at the same hours, so there are few deficits to absorb it and it is exported at p_exp anyway. More PV still lowers the total grid bill. Experiment E1c (30 seeds, mid-market, figure `e1c_pv_value.png`) splits the total saving against a no-PV, no-community baseline (~19,200 €/yr) gives total savings of 2,761 / 5,388 / 8,088 / 10,802 / 13,584 € without a community at 20/40/60/80/100% PV, 5,282 / 7,858 / 9,935 / 11,792 / 13,660 € with a community, and 5,550 / 10,191 / 13,091 / 15,195 / 17,184 € with a community and a 100 kWh shared battery (89% of the bill at 100% PV). Each extra kWp is worth less as PV grows (with a community: ~245 €/kWp/yr at 20% PV, ~130 at 100%). The model has no PV investment cost.
 
 **8. Storage (E2, mid-market).** At the same total capacity, one shared battery beats batteries spread over prosumers' homes: at 100 kWh, savings are 4,803 € vs 3,605 € (+1,199 €, paired p < 0.001) and self-sufficiency is 53% vs 44%. Home batteries concentrate the gain on prosumers and even lower consumers' savings (38 vs 68 €/yr without storage; Gini 0.46). The shared battery raises both groups (prosumers 232, consumers 112 €/yr; Gini 0.25 under mid-market, 0.13 under dynamic, see finding 4). Returns diminish above 100 kWh: at 200 kWh the shared battery already uses all the PV (self-consumption ≈ 100%). Peak import does not change (≈ 26.7 kW), because the battery charges only from local surplus and does no peak shaving.
 
@@ -434,6 +434,12 @@ Source: `experiments/results/*.csv` (one row per scenario and seed). Each cell i
 
 | scenario | savings € | Gini | prosumer € | consumer € | member share | prosumer members (end) | leaves | joins |
 |---|---|---|---|---|---|---|---|---|
+| none / pv 0% | 0 | 0 | – | 0 | 0.800 | 0 | 0 | 0 |
+| fixed / pv 0% | 0 | 0 | – | 0 | 0.800 | 0 | 0 | 0 |
+| mid_market / pv 0% | 0 | 0 | – | 0 | 0.800 | 0 | 0 | 0 |
+| sdr / pv 0% | 0 | 0 | – | 0 | 0.800 | 0 | 0 | 0 |
+| dynamic / pv 0% | 0 | 0 | – | 0 | 0.800 | 0 | 0 | 0 |
+| bill_sharing / pv 0% | 0 | 0 | – | 0 | 0.874 ± 0.0144 | 0 | 0 | 4.07 ± 0.518 |
 | none / pv 20% | 0 | 0 | 0 | 0 | 0.800 | 4.87 ± 0.376 | 0 | 0 |
 | fixed / pv 20% | 2,324 ± 104 | 0.304 ± 0.00698 | 161 ± 7.20 | 56.7 ± 2.54 | 0.932 ± 0.00896 | 5.97 ± 0.0682 | 0 | 5.70 ± 0.200 |
 | mid_market / pv 20% | 2,324 ± 104 | 0.382 ± 0.00615 | 194 ± 8.72 | 48.2 ± 2.16 | 0.932 ± 0.00896 | 5.97 ± 0.0682 | 0 | 5.70 ± 0.200 |
@@ -458,6 +464,12 @@ Source: `experiments/results/*.csv` (one row per scenario and seed). Each cell i
 | sdr / pv 80% | 919 ± 40.1 | 0.796 ± 0.00449 | 2.02 ± 0.198 | 145 ± 6.61 | 0.926 ± 0.00956 | 23.8 ± 0.161 | 0 | 5.67 ± 0.204 |
 | dynamic / pv 80% | 919 ± 40.1 | 0.697 ± 0.00584 | 6.80 ± 0.411 | 126 ± 5.29 | 0.926 ± 0.00956 | 23.8 ± 0.161 | 0 | 5.67 ± 0.204 |
 | bill_sharing / pv 80% | 514 ± 47.8 | 1.46 ± 0.0102 | -8.54 ± 0.795 | 120 ± 11.1 | 0.326 ± 0.0106 | 1.40 ± 0.577 | 23.5 ± 1.25 | 6.73 ± 1.42 |
+| none / pv 100% | 0 | 0 | 0 | – | 0.800 | 24.0 | 0 | 0 |
+| fixed / pv 100% | 70.0 ± 4.87 | 0.361 ± 0.0101 | 2.33 ± 0.162 | – | 0.925 ± 0.00929 | 29.6 ± 0.208 | 0 | 5.63 ± 0.208 |
+| mid_market / pv 100% | 70.0 ± 4.87 | 0.349 ± 0.00893 | 2.33 ± 0.162 | – | 0.925 ± 0.00929 | 29.6 ± 0.208 | 0 | 5.63 ± 0.208 |
+| sdr / pv 100% | 70.0 ± 4.87 | 0.540 ± 0.0157 | 2.33 ± 0.162 | – | 0.925 ± 0.00929 | 29.6 ± 0.208 | 0 | 5.63 ± 0.208 |
+| dynamic / pv 100% | 70.0 ± 4.87 | 0.457 ± 0.0115 | 2.33 ± 0.162 | – | 0.925 ± 0.00929 | 29.6 ± 0.208 | 0 | 5.63 ± 0.208 |
+| bill_sharing / pv 100% | 43.3 ± 3.32 | 1.23 ± 0.0159 | 1.44 ± 0.111 | – | 0.600 ± 0.0166 | 16.8 ± 0.964 | 37.1 ± 1.75 | 29.9 ± 1.64 |
 
 ## E1b. Pricing x membership threshold (40% PV)
 
@@ -481,6 +493,23 @@ Source: `experiments/results/*.csv` (one row per scenario and seed). Each cell i
 | sdr / threshold 5 | 1,034 ± 100 | 0.487 ± 0.0147 | 8.95 ± 0.916 | 51.5 ± 5.03 | 0.463 ± 0.0332 | 37.5 ± 1.73 | 18.8 ± 2.43 |
 | dynamic / threshold 5 | 1,976 ± 73.2 | 0.318 ± 0.0178 | 62.4 ± 2.51 | 68.2 ± 2.63 | 0.734 ± 0.0189 | 28.0 ± 1.88 | 16.8 ± 1.67 |
 | bill_sharing / threshold 5 | 480 ± 68.1 | 1.11 ± 0.0182 | -16.5 ± 2.34 | 37.6 ± 5.34 | 0.301 ± 0.0317 | 27.2 ± 0.954 | 3.50 ± 0.939 |
+
+## E1c. Value of PV: PV share x community with / without a 100 kWh shared battery (mid-market)
+
+| scenario | panels' own saving € | savings € | bill with no PV € | self-sufficiency |
+|---|---|---|---|---|
+| community / pv 0% | 0 | 0 | 19,328 ± 252 | 0 |
+| community / pv 20% | 2,761 ± 80.2 | 2,522 ± 95.9 | 19,103 ± 243 | 0.270 ± 0.00680 |
+| community / pv 40% | 5,388 ± 69.1 | 2,471 ± 37.7 | 19,111 ± 259 | 0.350 ± 0.00255 |
+| community / pv 60% | 8,088 ± 132 | 1,847 ± 33.7 | 19,236 ± 286 | 0.383 ± 0.00189 |
+| community / pv 80% | 10,802 ± 165 | 989 ± 31.6 | 19,120 ± 245 | 0.404 ± 0.00152 |
+| community / pv 100% | 13,584 ± 145 | 75.7 ± 5.22 | 19,294 ± 228 | 0.418 ± 0.00152 |
+| community + shared 100 kWh / pv 0% | 0 | 8.12 | 19,328 ± 252 | 0.000419 ± 0.00000562 |
+| community + shared 100 kWh / pv 20% | 2,761 ± 80.2 | 2,789 ± 147 | 19,103 ± 243 | 0.290 ± 0.0111 |
+| community + shared 100 kWh / pv 40% | 5,388 ± 69.1 | 4,803 ± 103 | 19,111 ± 259 | 0.531 ± 0.0106 |
+| community + shared 100 kWh / pv 60% | 8,088 ± 132 | 5,003 ± 44.0 | 19,236 ± 286 | 0.626 ± 0.00653 |
+| community + shared 100 kWh / pv 80% | 10,802 ± 165 | 4,393 ± 33.7 | 19,120 ± 245 | 0.667 ± 0.00480 |
+| community + shared 100 kWh / pv 100% | 13,584 ± 145 | 3,600 ± 9.39 | 19,294 ± 228 | 0.689 ± 0.00486 |
 
 ## E2. Storage: none / individual / shared, same total capacity (mid-market)
 

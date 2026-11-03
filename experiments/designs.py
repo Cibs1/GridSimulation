@@ -28,6 +28,23 @@ def pricing():
     }
 
 
+def pv_value():
+    """E1c: share of households with PV, community with and without a shared battery (all members).
+
+    Splits the total saving against no PV and no community into the panels'
+    own saving and the extra from sharing (and from the battery).
+    """
+    configs = {
+        "community": {"pricing": "mid_market"},
+        "community + shared 100 kWh": {"pricing": "mid_market", "storage_mode": "shared", "storage_kwh": 100},
+    }
+    return {
+        f"{c} | pv {int(s * 100)}%": {**params, "pv_share": s}
+        for c, params in configs.items()
+        for s in [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+    }
+
+
 def membership_threshold():
     """E1b: pricing mechanism x participation threshold (EUR per 30 days), 40% PV."""
     return {
@@ -101,6 +118,7 @@ def sensitivity():
 DESIGNS = {
     "e1_pricing": pricing,
     "e1b_membership_threshold": membership_threshold,
+    "e1c_pv_value": pv_value,
     "e2_storage": storage,
     "e2b_storage_pricing": storage_pricing,
     "e3_demand_response": demand_response,

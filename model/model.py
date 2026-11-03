@@ -348,6 +348,9 @@ class Community(mesa.Model):
             "served_during_outages": 1 - df.loc[outage, "lost_load"].sum() / outage_demand if outage_demand else np.nan,
             "lost_load_kwh": df["lost_load"].sum(),
             "lost_load_alone_kwh": sum(h.lost_load_alone_kwh for h in hh),
+            # Value of the panels alone: bill with no PV minus bill alone with PV (no community, no battery)
+            "no_pv_bill_eur": sum(h.bill_no_pv_eur for h in hh),
+            "panel_savings_eur": sum(h.bill_no_pv_eur - h.bill_alone_eur for h in hh),
             "curtailment_kwh": df["curtailment"].sum(),
             "battery_revenue_eur": self.manager.battery_revenue_eur,  # paid for energy from the community battery
             "battery_cash_unallocated_eur": self.manager.battery_cash_unallocated_eur,

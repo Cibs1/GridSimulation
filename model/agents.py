@@ -69,6 +69,8 @@ class Household(mesa.Agent):
         bill = np.where(up, deficit * model.import_prices - surplus * model.export_price, 0.0)
         self._bill_alone_cum = np.cumsum(bill)
         self._lost_load_alone_cum = np.cumsum(np.where(up, 0.0, deficit))
+        # Same household with no panels either: it buys all its base demand from the grid
+        self._bill_no_pv_cum = np.cumsum(np.where(up, self.base_demand * model.import_prices, 0.0))
 
     @property
     def is_prosumer(self):
@@ -88,6 +90,12 @@ class Household(mesa.Agent):
     def lost_load_alone_kwh(self):
         t = self.model.settled_hour
         return self._lost_load_alone_cum[t] if t >= 0 else 0.0
+
+    @property
+    def bill_no_pv_eur(self):
+        """Bill over the hours settled so far with no panels and no community."""
+        t = self.model.settled_hour
+        return self._bill_no_pv_cum[t] if t >= 0 else 0.0
 
     @property
     def savings_eur(self):
