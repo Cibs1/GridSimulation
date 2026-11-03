@@ -25,6 +25,8 @@ DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "processed"
 HOURS_PER_YEAR = 8760
 PRICING_MECHANISMS = ("none", "fixed", "mid_market", "sdr", "dynamic", "bill_sharing")
 STORAGE_MODES = ("none", "shared", "individual")
+TARIFFS = ("simple", "bi_hourly")
+BATTERY_INCOME_RULES = ("prosumers", "unallocated")
 
 
 @lru_cache(maxsize=1)
@@ -61,7 +63,9 @@ class Community(mesa.Model):
     availability) and the agents: the households and one CommunityManager
     that runs the local market, the community battery and billing.
 
-    Prices are placeholders until the ERSE tariff values are decided.
+    Grid import prices are the ERSE regulated tariffs for low-voltage households
+    (simple, or bi-hourly with the daily-cycle off-peak 22:00-08:00); the export
+    price is a typical fixed-price buy-back offer.
     """
 
     def __init__(
@@ -84,12 +88,16 @@ class Community(mesa.Model):
         p_join=0.2,
         pricing="mid_market",
         fixed_price=0.10,  # EUR/kWh, used by pricing="fixed"
-        import_price=0.20,  # EUR/kWh, placeholder
-        export_price=0.05,  # EUR/kWh, placeholder
+        tariff="simple",  # grid import tariff: "simple" (flat) or "bi_hourly" (time of use)
+        import_price=0.1711,  # EUR/kWh, ERSE simple tariff
+        import_price_peak=0.2045,  # EUR/kWh, ERSE bi-hourly, outside off-peak
+        import_price_offpeak=0.1143,  # EUR/kWh, ERSE bi-hourly, off-peak (22:00-08:00)
+        export_price=0.05,  # EUR/kWh, typical fixed buy-back offer for surplus
         storage_mode="none",
         storage_kwh=0.0,  # total capacity: one shared battery, or split over prosumers
         battery_c_rate=0.5,
         battery_efficiency=0.9,  # round trip
+        battery_income="prosumers",  # who gets the community battery's income: "prosumers" or "unallocated"
         outage_rate=4.0,  # outages per year
         outage_duration=(1, 8),  # hours, inclusive
         check_balance=True,
@@ -100,12 +108,23 @@ class Community(mesa.Model):
             raise ValueError(f"pricing must be one of {PRICING_MECHANISMS}")
         if storage_mode not in STORAGE_MODES:
             raise ValueError(f"storage_mode must be one of {STORAGE_MODES}")
+        if tariff not in TARIFFS:
+            raise ValueError(f"tariff must be one of {TARIFFS}")
+        if battery_income not in BATTERY_INCOME_RULES:
+            raise ValueError(f"battery_income must be one of {BATTERY_INCOME_RULES}")
 
         self.pv_yield, self.load_shape, self.local_hour = load_inputs()
         self.day_starts = np.flatnonzero(self.local_hour == 0)
+        self.hour = 0
 
         self.pricing = pricing
-        self.import_price = import_price
+        self.tariff = tariff
+        # Grid import price for every hour of the year (EUR/kWh)
+        if tariff == "bi_hourly":
+            offpeak = (self.local_hour >= 22) | (self.local_hour < 8)
+            self.import_prices = np.where(offpeak, import_price_offpeak, import_price_peak)
+        else:
+            self.import_prices = np.full(HOURS_PER_YEAR, import_price)
         self.export_price = export_price
         self.flexibility = flexibility
         self.membership = membership
@@ -155,9 +174,8 @@ class Community(mesa.Model):
 
         # Created after the households so their unique_ids do not depend on it
         self.manager = CommunityManager(self, fixed_price=fixed_price, battery=community_battery,
-                                        price_memory=price_memory)
+                                        price_memory=price_memory, battery_income=battery_income)
 
-        self.hour = 0
         self.leaves = self.joins = 0
         self.flows = dict.fromkeys(
             ["pv", "demand", "self_use", "shared", "battery_charge", "battery_discharge",
@@ -184,6 +202,11 @@ class Community(mesa.Model):
     @property
     def members(self):
         return [h for h in self.households if h.is_member]
+
+    @property
+    def import_price(self):
+        """Grid import price in the current hour (EUR/kWh)."""
+        return self.import_prices[self.hour]
 
     @property
     def battery(self):
@@ -241,7 +264,7 @@ class Community(mesa.Model):
         end = self.day_starts[nxt] if nxt < len(self.day_starts) else HOURS_PER_YEAR
         today = slice(start, end)
         price = self.manager.price_forecast[self.local_hour[today]]
-        price = np.where(np.isnan(price), self.import_price, price)
+        price = np.where(np.isnan(price), self.import_prices[today], price)
         pv_forecast = self.pv_yield[start - 24:end - 24]  # persistence: today's PV = yesterday's
         for h in self.households:
             if h.flexibility > 0:
@@ -310,8 +333,8 @@ class Community(mesa.Model):
         outage = ~df["grid_available"].to_numpy(dtype=bool)
         outage_demand = df.loc[outage, "demand"].sum()
         return {
-            # savings = reference grid bill - actual grid bill; battery income stays in the community
-            "community_savings_eur": savings.sum() + self.manager.battery_cash_eur,
+            # savings = reference grid bill - actual grid bill; battery income not paid out stays in the community
+            "community_savings_eur": savings.sum() + self.manager.battery_cash_unallocated_eur,
             "self_sufficiency": (demand - df["imported"].sum() - df["lost_load"].sum()) / demand,
             "self_consumption": (pv - df["exported"].sum() - df["curtailment"].sum()) / pv if pv > 0 else np.nan,
             "peak_import_kw": df["imported"].max(),  # kWh in a 1 h step = mean kW
@@ -324,7 +347,9 @@ class Community(mesa.Model):
             "lost_load_kwh": df["lost_load"].sum(),
             "lost_load_alone_kwh": sum(h.lost_load_alone_kwh for h in hh),
             "curtailment_kwh": df["curtailment"].sum(),
-            "battery_cash_eur": self.manager.battery_cash_eur,
+            "battery_revenue_eur": self.manager.battery_revenue_eur,  # paid for energy from the community battery
+            "battery_cash_unallocated_eur": self.manager.battery_cash_unallocated_eur,
+            "storage_losses_kwh": sum(b.losses_kwh for b in self.batteries()),
             "members_final": len(self.members),
             "prosumer_members_final": sum(h.is_member and h.is_prosumer for h in hh),
             "member_share_mean": df["n_members"].mean() / len(hh),
@@ -338,6 +363,7 @@ class Community(mesa.Model):
             {
                 "id": h.unique_id, "pv_kwp": h.pv_kwp, "annual_kwh": h.annual_kwh,
                 "battery_kwh": h.battery.capacity_kwh if h.battery else 0.0,
+                "to_community_battery_kwh": h.battery_energy_kwh, "battery_income_eur": h.battery_income_eur,
                 "imported_kwh": h.energy_imported_kwh, "exported_kwh": h.energy_exported_kwh,
                 "shared_kwh": h.energy_shared_kwh, "lost_load_kwh": h.lost_load_kwh,
                 "bill_eur": h.bill_eur, "bill_alone_eur": h.bill_alone_eur, "savings_eur": h.savings_eur,

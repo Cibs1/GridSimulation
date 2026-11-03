@@ -18,18 +18,21 @@ class CommunityManager(mesa.Agent):
     which flexible households use for demand response.
     """
 
-    def __init__(self, model, fixed_price=0.10, battery=None, price_memory=0.3):
+    def __init__(self, model, fixed_price=0.10, battery=None, price_memory=0.3, battery_income="prosumers"):
         super().__init__(model)
         self.fixed_price = fixed_price  # EUR/kWh, used by pricing="fixed"
         self.battery = battery  # community battery, or None
         self.price_memory = price_memory  # weight of the latest day in the price forecast
+        self.battery_income = battery_income  # "prosumers": paid to those who filled it; "unallocated": kept
 
         # This step's market outcome (kWh, EUR/kWh)
         self.supply = self.bids = self.traded = 0.0
+        self.battery_offer = 0.0  # energy the community battery can give to the deficit left after the market
         self.bat_charge = self.bat_discharge = 0.0
         self.local_price = np.nan
 
-        self.battery_cash_eur = 0.0  # net income of the community battery (counts as community savings)
+        self.battery_revenue_eur = 0.0  # paid by members for energy delivered by the community battery
+        self.battery_cash_unallocated_eur = 0.0  # battery money not paid to any household (counts as community savings)
         # Price a member pays per extra kWh in each hour (local share at the local
         # price, the rest at p_imp), and its smoothed forecast by local hour of day
         self.effective_price = np.full(HOURS_PER_YEAR, np.nan)
@@ -76,15 +79,33 @@ class CommunityManager(mesa.Agent):
 
     def reset_step(self):
         self.supply = self.bids = self.traded = self.bat_charge = self.bat_discharge = 0.0
+        self.battery_offer = 0.0
         self.local_price = np.nan
 
     def clear_market(self):
-        """Match the members' offers and bids pro rata."""
+        """Match the members' offers and bids pro rata and set the local price.
+
+        When members' offers leave part of the deficit unserved, all the energy
+        the community battery can deliver this hour counts as local supply when
+        the price is set, so under SDR and dynamic pricing the fuller the
+        battery the lower the price, and a nearly empty one leaves it close to
+        p_imp. The price never exceeds p_imp, so buyers always gain.
+
+        When the battery delivers, the price is at least p_exp divided by its
+        round-trip efficiency: after losses, a prosumer then earns at least
+        what exporting the surplus would have paid, so storing is never worse
+        than exporting, and buyers still pay less than p_imp.
+        """
         members = self.model.members
         self.supply = sum(h.offer for h in members)
         self.bids = sum(h.deficit for h in members)
         self.traded = min(self.supply, self.bids)
-        self.local_price = self.market_price(self.supply, self.bids)
+        if self.battery is not None and self.bids > self.traded:
+            self.battery_offer = self.battery.deliverable_kwh
+        self.local_price = self.market_price(self.supply + self.battery_offer, self.bids)
+        if self.battery_offer > 0 and not np.isnan(self.local_price):
+            floor = self.model.export_price / self.battery.eta ** 2
+            self.local_price = max(self.local_price, floor)
         if self.traded <= 0:
             return
         for h in members:
@@ -94,7 +115,11 @@ class CommunityManager(mesa.Agent):
     # ---- community battery (process 6) ----------------------------------------
 
     def operate_battery(self):
-        """Leftover offers charge the shared battery; leftover bids are served from it."""
+        """Leftover offers charge the shared battery; leftover bids are served from it.
+
+        Energy put into the battery is not sold: each seller's share is recorded
+        in `to_battery` and adds to its stake in the battery (`battery_energy_kwh`).
+        """
         if self.battery is None:
             return
         members = self.model.members
@@ -103,7 +128,8 @@ class CommunityManager(mesa.Agent):
         self.bat_charge = self.battery.charge(left_supply)
         if self.bat_charge > 0:
             for h in members:
-                h.sold_local += (h.offer - h.sold_local) * self.bat_charge / left_supply
+                h.to_battery = (h.offer - h.sold_local) * self.bat_charge / left_supply
+                h.battery_energy_kwh += h.to_battery
         self.bat_discharge = self.battery.discharge(left_bids)
         if self.bat_discharge > 0:
             for h in members:
@@ -136,13 +162,40 @@ class CommunityManager(mesa.Agent):
                 h.book(cost, income)
         else:
             p_local = 0.0 if np.isnan(self.local_price) else self.local_price
+            battery_pay = self.battery_payments(p_local) if self.battery is not None else {}
             for h in m.households:
                 h.book(h.imported * p_imp + h.bought_local * p_local,
-                       h.exported * p_exp + h.sold_local * p_local)
-            # The battery buys its charge from sellers and sells its discharge to buyers at the local price
-            self.battery_cash_eur += (self.bat_discharge - self.bat_charge) * p_local
+                       h.exported * p_exp + h.sold_local * p_local, battery_pay.get(h, 0.0))
 
         self.effective_price[m.hour] = self.member_price()
+
+    def battery_payments(self, p_local):
+        """Money each household receives this step for energy it put into the community battery.
+
+        The battery only stores energy. Members with a deficit pay for what it
+        delivers at the local price of the hour it is delivered, like any
+        local energy. Under the "prosumers" rule that money is paid to the
+        households that filled the battery, in proportion to the energy each
+        has put in since the start of the run, so a prosumer is paid for its
+        stored surplus when it is used (round-trip losses mean less energy
+        comes out than went in). Income from the initial charge, before anyone
+        has filled the battery, stays with the community. Under the
+        "unallocated" rule the community buys the surplus from the sellers at
+        the local price when it charges and keeps the income from discharging.
+        """
+        hh = self.model.households
+        revenue = self.bat_discharge * p_local  # paid by members served from the battery
+        self.battery_revenue_eur += revenue
+        if self.battery_income == "unallocated":
+            self.battery_cash_unallocated_eur += revenue - self.bat_charge * p_local
+            return {h: h.to_battery * p_local for h in hh if h.to_battery > 0}
+        if revenue == 0:
+            return {}
+        total = sum(h.battery_energy_kwh for h in hh)
+        if total <= 0:
+            self.battery_cash_unallocated_eur += revenue
+            return {}
+        return {h: revenue * h.battery_energy_kwh / total for h in hh if h.battery_energy_kwh > 0}
 
     def member_price(self):
         """Average price a member paid per kWh of deficit this step: the share served

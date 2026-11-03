@@ -40,6 +40,7 @@ class Household(mesa.Agent):
         self.surplus = self.deficit = 0.0  # after self-consumption and home battery
         self.offer = 0.0  # part of the surplus offered to the community
         self.sold_local = self.bought_local = 0.0  # to/from other members and the community battery
+        self.to_battery = 0.0  # surplus put into the community battery (stored, not sold)
         self.imported = self.exported = 0.0
         self.lost_load = self.curtailed = 0.0
 
@@ -48,6 +49,8 @@ class Household(mesa.Agent):
         self.energy_imported_kwh = self.energy_exported_kwh = 0.0
         self.energy_shared_kwh = 0.0  # bought + sold locally
         self.lost_load_kwh = 0.0
+        self.battery_energy_kwh = 0.0  # energy put into the community battery (its stake in the battery)
+        self.battery_income_eur = 0.0  # money received for energy it put into the community battery
 
         # Bill and reference bill at the last membership review
         self._review_bill = self._review_bill_alone = 0.0
@@ -63,7 +66,7 @@ class Household(mesa.Agent):
         deficit = np.clip(self.base_demand - pv, 0, None)
         surplus = np.clip(pv - self.base_demand, 0, None)
         up = model.grid_available
-        bill = np.where(up, deficit * model.import_price - surplus * model.export_price, 0.0)
+        bill = np.where(up, deficit * model.import_prices - surplus * model.export_price, 0.0)
         self._bill_alone_cum = np.cumsum(bill)
         self._lost_load_alone_cum = np.cumsum(np.where(up, 0.0, deficit))
 
@@ -111,7 +114,7 @@ class Household(mesa.Agent):
         if self.is_member and m.pricing != "none":
             price = community_price
         else:
-            price = np.where(self.pv_kwp * pv_forecast > d, m.export_price, m.import_price)
+            price = np.where(self.pv_kwp * pv_forecast > d, m.export_price, m.import_prices[today])
 
         evening = (m.local_hour[today] >= 17) & (m.local_hour[today] < 22)
         evening_kwh = d[evening].sum()
@@ -143,12 +146,12 @@ class Household(mesa.Agent):
 
         cooperates = self.is_member and self.random.random() < self.cooperation
         self.offer = self.surplus if cooperates else 0.0
-        self.sold_local = self.bought_local = 0.0
+        self.sold_local = self.bought_local = self.to_battery = 0.0
 
     def exchange_with_grid(self, grid_available):
         """Import what is still missing and export what is still left (process 7)."""
         remaining_deficit = self.deficit - self.bought_local
-        remaining_surplus = self.surplus - self.sold_local
+        remaining_surplus = self.surplus - self.sold_local - self.to_battery
         if grid_available:
             self.imported, self.exported = remaining_deficit, remaining_surplus
             self.lost_load = self.curtailed = 0.0
@@ -156,10 +159,11 @@ class Household(mesa.Agent):
             self.imported = self.exported = 0.0
             self.lost_load, self.curtailed = remaining_deficit, remaining_surplus
 
-    def book(self, cost, revenue):
+    def book(self, cost, revenue, battery_income=0.0):
         self.cost_eur += cost
-        self.revenue_eur += revenue
+        self.revenue_eur += revenue + battery_income
+        self.battery_income_eur += battery_income
         self.energy_imported_kwh += self.imported
         self.energy_exported_kwh += self.exported
-        self.energy_shared_kwh += self.sold_local + self.bought_local
+        self.energy_shared_kwh += self.sold_local + self.to_battery + self.bought_local
         self.lost_load_kwh += self.lost_load

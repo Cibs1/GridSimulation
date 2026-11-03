@@ -11,10 +11,12 @@ PRICING = ["none", "fixed", "mid_market", "sdr", "dynamic", "bill_sharing"]
 STORAGE_KWH = [50, 100, 200]
 
 # Membership change (7.6) on, 20% of households outside at the start. A member
-# leaves if it saved less than the threshold over the last 30 days, which
-# stands for the cost of taking part (fees, effort). 2 EUR per 30 days in E1.
+# leaves if it saved less than the threshold over the last 30 days. Real
+# Portuguese communities charge consumers no fee to join or leave (30 days'
+# notice), so the base threshold is 0; E1b tests 2 and 5 EUR as a nuisance cost
+# (time, attention, paperwork), about 2-5% of a typical monthly bill.
 MEMBERSHIP = {"membership": True, "initial_member_share": 0.8}
-THRESHOLD = 2.0
+THRESHOLD = 0.0
 
 
 def pricing():
@@ -42,6 +44,11 @@ def storage():
         for mode in ["individual", "shared"]:
             scenarios[f"{mode} {kwh} kWh"] = {"storage_mode": mode, "storage_kwh": kwh}
     return scenarios
+
+
+def storage_pricing():
+    """E2b: pricing mechanism with a 100 kWh shared battery (its energy counts as supply in the price)."""
+    return {f"{p} | shared 100 kWh": {"pricing": p, "storage_mode": "shared", "storage_kwh": 100} for p in PRICING[1:]}
 
 
 def demand_response():
@@ -83,6 +90,11 @@ def sensitivity():
         scenarios[f"efficiency {e}"] = {**base, "battery_efficiency": e}
     for p in [0.03, 0.08]:
         scenarios[f"export price {p}"] = {**base, "export_price": p}
+    scenarios["battery income unallocated"] = {**base, "battery_income": "unallocated"}
+    # Bi-hourly tariff: cheap off-peak hours are at night, so demand response may move load away from midday
+    scenarios["bi-hourly tariff"] = {**base, "tariff": "bi_hourly"}
+    scenarios["flexibility 0.1"] = {**base, "flexibility": 0.1}
+    scenarios["bi-hourly tariff + flexibility 0.1"] = {**base, "tariff": "bi_hourly", "flexibility": 0.1}
     return scenarios
 
 
@@ -90,6 +102,7 @@ DESIGNS = {
     "e1_pricing": pricing,
     "e1b_membership_threshold": membership_threshold,
     "e2_storage": storage,
+    "e2b_storage_pricing": storage_pricing,
     "e3_demand_response": demand_response,
     "e4_resilience": resilience,
     "e5_sensitivity": sensitivity,

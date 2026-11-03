@@ -61,7 +61,7 @@ Scenario options (see `Community.__init__` in `model/model.py`):
 `initial_member_share` and `savings_threshold`).
 For example: `python -m experiments.run_baseline --pricing sdr --storage-mode shared --storage-kwh 100`.
 
-Tariffs are placeholders (0.20 / 0.05 EUR/kWh).
+Grid tariffs: ERSE simple tariff 0.1711 EUR/kWh (`tariff="simple"`, default) or bi-hourly 0.1143 off-peak 22:00-08:00 / 0.2045 otherwise (`tariff="bi_hourly"`); export 0.05 EUR/kWh. The community battery only stores surplus: what members pay for the energy it delivers goes to the prosumers who filled it (`battery_income="prosumers"`, default), or the community buys the surplus and keeps that money (`"unallocated"`).
 
 ```bash
 # 4. Verification tests (energy balance, money conservation, reproducibility, ...)
@@ -77,12 +77,13 @@ jupyter notebook notebooks/02_experiments.ipynb     # figures saved to notebooks
 
 | Experiment | Question | Design |
 | --- | --- | --- |
-| `e1_pricing` | RQ1 pricing, membership and fairness | 6 mechanisms x PV share 20/40/60/80%, membership on (threshold 2 EUR/30 days) |
+| `e1_pricing` | RQ1 pricing, membership and fairness | 6 mechanisms x PV share 20/40/60/80%, membership on (threshold 0) |
 | `e1b_membership_threshold` | robustness of RQ1 | 6 mechanisms x threshold 0/2/5 EUR per 30 days |
 | `e2_storage` | RQ2 shared vs individual storage | none / individual / shared x 50/100/200 kWh |
+| `e2b_storage_pricing` | RQ1 x RQ2 pricing with a shared battery | 5 mechanisms, each with a 100 kWh shared battery |
 | `e3_demand_response` | RQ3 flexibility | mid-market / SDR / dynamic x flexibility 0 / 0.1 / 0.2 |
 | `e4_resilience` | RQ4 outages | 3 outage regimes x 3 storage options x 20/30/50 households |
-| `e5_sensitivity` | robustness | one-at-a-time: cooperation, battery efficiency, export price |
+| `e5_sensitivity` | robustness | one-at-a-time: cooperation, battery efficiency, export price, battery income rule, bi-hourly tariff, flexibility |
 
 Scenarios share the same 30 seeds (same households, weather and outages), so
 they can be compared with paired tests. Statistics live in `experiments/stats.py`

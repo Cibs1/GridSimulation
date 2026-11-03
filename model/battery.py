@@ -17,10 +17,24 @@ class Battery:
         self.p_max_kw = c_rate * capacity_kwh
         self.eta = math.sqrt(round_trip_efficiency)  # eta_c = eta_d
         self.soc = soc  # 0-1
+        self.initial_kwh = soc * capacity_kwh
+        self.charged_kwh = self.discharged_kwh = 0.0  # AC side, accumulated
 
     @property
     def stored_kwh(self):
         return self.soc * self.capacity_kwh
+
+    @property
+    def deliverable_kwh(self):
+        """Most energy it can deliver in the next 1 h step (power limit and stored energy)."""
+        if self.capacity_kwh <= 0:
+            return 0.0
+        return min(self.p_max_kw, self.stored_kwh * self.eta)
+
+    @property
+    def losses_kwh(self):
+        """Energy lost in charging and discharging so far."""
+        return self.charged_kwh - self.discharged_kwh - (self.stored_kwh - self.initial_kwh)
 
     def charge(self, available_kwh):
         """Take up to `available_kwh` from the bus; return the energy actually taken."""
@@ -29,12 +43,14 @@ class Battery:
         room = (1 - self.soc) * self.capacity_kwh / self.eta
         e = min(available_kwh, self.p_max_kw, room)
         self.soc = min(1.0, self.soc + self.eta * e / self.capacity_kwh)
+        self.charged_kwh += e
         return e
 
     def discharge(self, needed_kwh):
         """Deliver up to `needed_kwh` to the bus; return the energy actually delivered."""
         if self.capacity_kwh <= 0 or needed_kwh <= 0:
             return 0.0
-        e = min(needed_kwh, self.p_max_kw, self.stored_kwh * self.eta)
+        e = min(needed_kwh, self.deliverable_kwh)
         self.soc = max(0.0, self.soc - e / self.eta / self.capacity_kwh)
+        self.discharged_kwh += e
         return e

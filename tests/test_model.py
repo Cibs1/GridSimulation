@@ -19,7 +19,7 @@ def run(**kwargs):
 
 def grid_bill(model):
     df = model.datacollector.get_model_vars_dataframe()
-    return model.import_price * df["imported"].sum() - model.export_price * df["exported"].sum()
+    return (model.import_prices * df["imported"]).sum() - model.export_price * df["exported"].sum()
 
 
 @pytest.fixture(scope="module")
@@ -124,6 +124,53 @@ def test_shared_battery_reduces_lost_load():
     alone = run(outage_rate=20, pricing="none").kpis()["lost_load_kwh"]
     shared = run(outage_rate=20, storage_mode="shared", storage_kwh=100).kpis()["lost_load_kwh"]
     assert shared < alone
+
+
+@pytest.mark.parametrize("pricing", ["mid_market", "sdr", "dynamic"])
+def test_battery_income_goes_to_those_who_filled_it(reference, pricing):
+    """Under the default rule, what members pay for battery energy goes to the households that filled it."""
+    model = run(pricing=pricing, storage_mode="shared", storage_kwh=100)
+    hh = list(model.households)
+    mgr = model.manager
+    paid = sum(h.battery_income_eur for h in hh)
+    assert mgr.battery_revenue_eur > 0
+    assert paid + mgr.battery_cash_unallocated_eur == pytest.approx(mgr.battery_revenue_eur)
+    assert 0 <= mgr.battery_cash_unallocated_eur < 0.05 * mgr.battery_revenue_eur  # only the initial charge
+    for h in hh:
+        assert h.battery_income_eur >= 0  # storing surplus never costs the prosumer money
+        if h.battery_energy_kwh == 0:
+            assert h.battery_income_eur == 0
+    assert all(h.is_prosumer for h in hh if h.battery_energy_kwh > 0)
+    losses = model.kpis()["storage_losses_kwh"]
+    assert 0 < losses < 0.11 * mgr.battery.charged_kwh  # 90% round trip: ~5% on the way in and out
+    # Who gets the income does not change the community total
+    other = run(pricing=pricing, storage_mode="shared", storage_kwh=100, battery_income="unallocated")
+    assert model.kpis()["community_savings_eur"] == pytest.approx(other.kpis()["community_savings_eur"], rel=1e-9)
+    assert model.kpis()["community_savings_eur"] == pytest.approx(grid_bill(reference) - grid_bill(model), rel=1e-9)
+
+
+@pytest.mark.parametrize("pricing", ["fixed", "mid_market", "sdr", "dynamic"])
+def test_storing_never_worse_than_exporting(pricing):
+    """Energy from the community battery is priced between p_exp / round-trip efficiency and p_imp,
+    so a prosumer earns at least the export price for what it stores and a buyer pays at most p_imp."""
+    model = Community(rng=1, pricing=pricing, storage_mode="shared", storage_kwh=100)
+    mgr = model.manager
+    floor = model.export_price / mgr.battery.eta ** 2
+    while model.running:
+        model.step()
+        if mgr.bat_discharge > 0:
+            assert floor - 1e-12 <= mgr.local_price <= model.import_price + 1e-12
+    assert mgr.battery_revenue_eur >= model.export_price * mgr.battery.discharged_kwh / mgr.battery.eta ** 2 - 1e-9
+
+
+def test_bi_hourly_tariff():
+    m = Community(rng=1, tariff="bi_hourly")
+    night = (m.local_hour >= 22) | (m.local_hour < 8)
+    assert np.all(m.import_prices[night] == pytest.approx(0.1143))
+    assert np.all(m.import_prices[~night] == pytest.approx(0.2045))
+    model = run(tariff="bi_hourly", pricing="dynamic", flexibility=0.1)
+    ref = run(tariff="bi_hourly", pricing="none")
+    assert model.kpis()["community_savings_eur"] == pytest.approx(grid_bill(ref) - grid_bill(model), rel=1e-9)
 
 
 def test_battery_limits_and_losses():
