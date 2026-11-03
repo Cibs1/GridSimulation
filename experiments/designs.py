@@ -23,7 +23,7 @@ def pricing():
     """E1: pricing mechanism x share of households with PV, with membership change."""
     return {
         f"{p} | pv {int(s * 100)}%": {"pricing": p, "pv_share": s, **MEMBERSHIP, "savings_threshold": THRESHOLD}
-        for s in [0.2, 0.4, 0.6, 0.8]
+        for s in [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
         for p in PRICING
     }
 

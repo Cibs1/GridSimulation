@@ -121,9 +121,9 @@ E2b (shared 100 kWh, all members, 30 seeds; total savings 4,803 €/yr under eve
 
 Dynamic pricing with a shared battery is the fairest combination (every Tukey pair p < 0.001). Under SDR night supply usually covers demand once the battery is counted, so the price sits at the floor and prosumers earn about the export price for what they store. Under mid-market prosumers earn about 0.10 € per kWh stored (vs 0.05 for exporting). Bill-sharing has no per-kWh price, so battery energy is free to buyers and prosumers end up worse off than alone; this follows from Long et al.'s definition but breaks the rule that prosumers are paid for their surplus. The model has no battery investment cost, so storage still looks free.
 
-**5. Bill-sharing penalises prosumers.** Energy exchanged between members is effectively free to buyers, and sellers are paid only for the part of their offer that is exported. Prosumers end up worse off than alone (−24 €/yr at 40% PV), so they leave even at threshold 0; about half of the households are out on average, savings are ~70% lower than the other mechanisms, and the Gini exceeds 1.
+**5. Bill-sharing penalises prosumers.** Energy exchanged between members is effectively free to buyers, and sellers are paid only for the part of their offer that is exported. Prosumers end up worse off than alone (−25 €/yr at 40% PV), so they leave even at threshold 0 (12 leaves a year; 63% of households are members on average), savings are ~68% lower than the other mechanisms, and the Gini exceeds 1.
 
-**6. The participation cost decides whether membership matters.** At 0 € only bill-sharing loses members; at 2 € SDR too; at 5 € every mechanism loses members (savings −12% to −21% for fixed, mid-market and dynamic; −55% for SDR) (E1b).
+**6. The participation cost decides whether membership matters.** At 0 € only bill-sharing loses members; at 2 € SDR too; at 5 € every mechanism loses members (savings −12% to −22% for fixed, mid-market and dynamic; −55% for SDR) (E1b). An earlier version compared the 30-day savings over hours shifted by one, which made a few prosumers with near-zero savings leave by mistake; this is fixed and covered by a test.
 
 **7. More PV lowers total savings.** E1: 2,324 €/yr at 20% PV, 2,297 at 40%, 1,713 at 60%, 919 at 80% (same for fixed, mid-market, SDR and dynamic). With more prosumers there are fewer deficits to sell to, and the extra surplus is exported at p_exp anyway.
 
@@ -428,7 +428,7 @@ PV + import + discharge + lost load = demand + export + charge + curtailment
 
 # Part E. Experiment results
 
-Source: `experiments/results/*.csv` (one row per scenario and seed). Each cell is the mean ± 95% t confidence half-width over 30 seeds (0–29). Savings are €/year against the no-community reference (community total, or mean per prosumer / consumer). Baseline unless stated: 30 households, 40% PV, mid-market, no storage, 4 outages/year, ERSE simple tariff 0.1711 €/kWh, export 0.05 €/kWh, battery income to the prosumers who filled it. Figures are in `notebooks/figures/`; statistical tests (ANOVA, Kruskal–Wallis, Tukey, paired tests) are in `notebooks/02_experiments.ipynb`.
+Source: `experiments/results/*.csv` (one row per scenario and seed). Each cell is the mean ± 95% t confidence half-width over 30 seeds (0–29). Savings are €/year against the no-community reference (community total, or mean per prosumer / consumer). Baseline unless stated: 30 households, 40% PV, mid-market, no storage, 4 outages/year, ERSE simple tariff 0.1711 €/kWh, export 0.05 €/kWh, community battery energy paid to the prosumers who filled it. Figures are in `notebooks/figures/`; statistical tests (ANOVA, Kruskal–Wallis, Tukey, paired tests) are in `notebooks/02_experiments.ipynb`.
 
 ## E1. Pricing x PV share (membership on, threshold 0 €)
 
@@ -439,25 +439,25 @@ Source: `experiments/results/*.csv` (one row per scenario and seed). Each cell i
 | mid_market / pv 20% | 2,324 ± 104 | 0.382 ± 0.00615 | 194 ± 8.72 | 48.2 ± 2.16 | 0.932 ± 0.00896 | 5.97 ± 0.0682 | 0 | 5.70 ± 0.200 |
 | sdr / pv 20% | 2,324 ± 104 | 0.233 ± 0.0146 | 34.7 ± 2.46 | 88.2 ± 4.72 | 0.932 ± 0.00896 | 5.97 ± 0.0682 | 0 | 5.70 ± 0.200 |
 | dynamic / pv 20% | 2,324 ± 104 | 0.415 ± 0.0137 | 207 ± 6.45 | 45.1 ± 2.97 | 0.932 ± 0.00896 | 5.97 ± 0.0682 | 0 | 5.70 ± 0.200 |
-| bill_sharing / pv 20% | 462 ± 71.0 | 0.942 ± 0.0255 | -31.8 ± 4.88 | 27.2 ± 4.18 | 0.532 ± 0.0476 | 0.933 ± 0.339 | 26.3 ± 2.37 | 17.3 ± 1.52 |
+| bill_sharing / pv 20% | 541 ± 58.5 | 0.874 ± 0.0181 | -37.2 ± 4.02 | 31.9 ± 3.44 | 0.778 ± 0.0103 | 0.767 ± 0.363 | 7.30 ± 0.581 | 7.50 ± 0.732 |
 | none / pv 40% | 0 | 0 | 0 | 0 | 0.800 | 9.20 ± 0.409 | 0 | 0 |
 | fixed / pv 40% | 2,297 ± 45.3 | 0.196 ± 0.0124 | 79.6 ± 1.53 | 74.5 ± 1.50 | 0.929 ± 0.00912 | 11.9 ± 0.114 | 0 | 5.70 ± 0.200 |
 | mid_market / pv 40% | 2,297 ± 45.3 | 0.235 ± 0.0122 | 96.3 ± 1.86 | 63.4 ± 1.29 | 0.929 ± 0.00912 | 11.9 ± 0.114 | 0 | 5.70 ± 0.200 |
 | sdr / pv 40% | 2,297 ± 45.3 | 0.457 ± 0.00819 | 6.58 ± 0.367 | 123 ± 2.45 | 0.929 ± 0.00912 | 11.9 ± 0.114 | 0 | 5.70 ± 0.200 |
 | dynamic / pv 40% | 2,297 ± 45.3 | 0.205 ± 0.0120 | 71.3 ± 2.12 | 80.1 ± 1.74 | 0.929 ± 0.00912 | 11.9 ± 0.114 | 0 | 5.70 ± 0.200 |
-| bill_sharing / pv 40% | 712 ± 69.3 | 1.09 ± 0.0174 | -24.4 ± 2.38 | 55.8 ± 5.43 | 0.531 ± 0.0267 | 1.53 ± 0.478 | 22.7 ± 1.71 | 13.5 ± 1.65 |
+| bill_sharing / pv 40% | 732 ± 78.6 | 1.06 ± 0.0127 | -25.1 ± 2.70 | 57.4 ± 6.17 | 0.628 ± 0.0109 | 1.53 ± 0.507 | 12.3 ± 0.826 | 7.50 ± 0.897 |
 | none / pv 60% | 0 | 0 | 0 | 0 | 0.800 | 14.3 ± 0.438 | 0 | 0 |
 | fixed / pv 60% | 1,713 ± 48.6 | 0.290 ± 0.0111 | 39.9 ± 1.12 | 82.9 ± 2.39 | 0.927 ± 0.00956 | 17.9 ± 0.129 | 0 | 5.63 ± 0.208 |
 | mid_market / pv 60% | 1,713 ± 48.6 | 0.233 ± 0.0124 | 48.1 ± 1.35 | 70.5 ± 2.03 | 0.927 ± 0.00956 | 17.9 ± 0.129 | 0 | 5.63 ± 0.208 |
-| sdr / pv 60% | 1,715 ± 46.5 | 0.638 ± 0.00715 | 2.54 ± 0.185 | 139 ± 3.77 | 0.926 ± 0.0102 | 17.8 ± 0.142 | 0.167 ± 0.221 | 5.80 ± 0.267 |
+| sdr / pv 60% | 1,713 ± 48.6 | 0.639 ± 0.00769 | 2.53 ± 0.186 | 139 ± 3.94 | 0.927 ± 0.00956 | 17.9 ± 0.129 | 0 | 5.63 ± 0.208 |
 | dynamic / pv 60% | 1,713 ± 48.6 | 0.442 ± 0.0126 | 24.1 ± 1.19 | 107 ± 2.53 | 0.927 ± 0.00956 | 17.9 ± 0.129 | 0 | 5.63 ± 0.208 |
-| bill_sharing / pv 60% | 730 ± 51.3 | 1.27 ± 0.0102 | -16.6 ± 1.17 | 85.7 ± 6.03 | 0.425 ± 0.0169 | 1.87 ± 0.602 | 26.2 ± 1.73 | 12.5 ± 1.60 |
+| bill_sharing / pv 60% | 765 ± 46.4 | 1.26 ± 0.0151 | -17.4 ± 1.06 | 89.9 ± 5.45 | 0.478 ± 0.00915 | 1.33 ± 0.442 | 18.5 ± 0.745 | 7.57 ± 0.908 |
 | none / pv 80% | 0 | 0 | 0 | 0 | 0.800 | 19.1 ± 0.330 | 0 | 0 |
 | fixed / pv 80% | 919 ± 40.1 | 0.470 ± 0.00630 | 16.7 ± 0.697 | 86.1 ± 3.96 | 0.926 ± 0.00956 | 23.8 ± 0.161 | 0 | 5.67 ± 0.204 |
 | mid_market / pv 80% | 919 ± 40.1 | 0.406 ± 0.00712 | 20.0 ± 0.839 | 73.3 ± 3.37 | 0.926 ± 0.00956 | 23.8 ± 0.161 | 0 | 5.67 ± 0.204 |
-| sdr / pv 80% | 915 ± 42.5 | 0.797 ± 0.00493 | 2.01 ± 0.198 | 144 ± 7.00 | 0.915 ± 0.0103 | 23.5 ± 0.290 | 0.900 ± 0.315 | 6.30 ± 0.262 |
+| sdr / pv 80% | 919 ± 40.1 | 0.796 ± 0.00449 | 2.02 ± 0.198 | 145 ± 6.61 | 0.926 ± 0.00956 | 23.8 ± 0.161 | 0 | 5.67 ± 0.204 |
 | dynamic / pv 80% | 919 ± 40.1 | 0.697 ± 0.00584 | 6.80 ± 0.411 | 126 ± 5.29 | 0.926 ± 0.00956 | 23.8 ± 0.161 | 0 | 5.67 ± 0.204 |
-| bill_sharing / pv 80% | 519 ± 33.8 | 1.46 ± 0.0112 | -8.60 ± 0.591 | 121 ± 7.99 | 0.318 ± 0.0117 | 1.87 ± 0.758 | 26.5 ± 1.57 | 9.50 ± 1.90 |
+| bill_sharing / pv 80% | 514 ± 47.8 | 1.46 ± 0.0102 | -8.54 ± 0.795 | 120 ± 11.1 | 0.326 ± 0.0106 | 1.40 ± 0.577 | 23.5 ± 1.25 | 6.73 ± 1.42 |
 
 ## E1b. Pricing x membership threshold (40% PV)
 
@@ -468,18 +468,18 @@ Source: `experiments/results/*.csv` (one row per scenario and seed). Each cell i
 | mid_market / threshold 0 | 2,297 ± 45.3 | 0.235 ± 0.0122 | 96.3 ± 1.86 | 63.4 ± 1.29 | 0.929 ± 0.00912 | 0 | 5.70 ± 0.200 |
 | sdr / threshold 0 | 2,297 ± 45.3 | 0.457 ± 0.00819 | 6.58 ± 0.367 | 123 ± 2.45 | 0.929 ± 0.00912 | 0 | 5.70 ± 0.200 |
 | dynamic / threshold 0 | 2,297 ± 45.3 | 0.205 ± 0.0120 | 71.3 ± 2.12 | 80.1 ± 1.74 | 0.929 ± 0.00912 | 0 | 5.70 ± 0.200 |
-| bill_sharing / threshold 0 | 712 ± 69.3 | 1.09 ± 0.0174 | -24.4 ± 2.38 | 55.8 ± 5.43 | 0.531 ± 0.0267 | 22.7 ± 1.71 | 13.5 ± 1.65 |
+| bill_sharing / threshold 0 | 732 ± 78.6 | 1.06 ± 0.0127 | -25.1 ± 2.70 | 57.4 ± 6.17 | 0.628 ± 0.0109 | 12.3 ± 0.826 | 7.50 ± 0.897 |
 | none / threshold 2 | 0 | 0 | 0 | 0 | 0.800 | 0 | 0 |
 | fixed / threshold 2 | 2,300 ± 48.5 | 0.197 ± 0.0122 | 79.7 ± 1.65 | 74.6 ± 1.60 | 0.928 ± 0.00890 | 0.900 ± 0.371 | 5.97 ± 0.208 |
 | mid_market / threshold 2 | 2,297 ± 45.3 | 0.236 ± 0.0123 | 96.3 ± 1.86 | 63.4 ± 1.28 | 0.928 ± 0.00924 | 0.400 ± 0.186 | 5.70 ± 0.200 |
-| sdr / threshold 2 | 1,808 ± 54.2 | 0.432 ± 0.00907 | 11.8 ± 0.529 | 92.6 ± 3.08 | 0.714 ± 0.0132 | 19.3 ± 1.90 | 15.8 ± 1.04 |
-| dynamic / threshold 2 | 2,303 ± 48.2 | 0.206 ± 0.0121 | 71.8 ± 2.17 | 80.1 ± 1.80 | 0.922 ± 0.0103 | 1.63 ± 0.465 | 6.07 ± 0.293 |
+| sdr / threshold 2 | 1,809 ± 53.6 | 0.430 ± 0.00918 | 11.9 ± 0.567 | 92.6 ± 3.07 | 0.718 ± 0.0135 | 19.3 ± 1.85 | 16.0 ± 1.00 |
+| dynamic / threshold 2 | 2,306 ± 46.5 | 0.205 ± 0.0113 | 71.9 ± 2.13 | 80.2 ± 1.76 | 0.923 ± 0.00962 | 1.63 ± 0.465 | 6.03 ± 0.302 |
 | bill_sharing / threshold 2 | 464 ± 58.8 | 1.10 ± 0.0142 | -15.9 ± 2.02 | 36.4 ± 4.61 | 0.339 ± 0.0342 | 25.7 ± 0.679 | 2.27 ± 0.415 |
 | none / threshold 5 | 0 | 0 | 0 | 0 | 0.800 | 0 | 0 |
-| fixed / threshold 5 | 2,020 ± 67.2 | 0.290 ± 0.0174 | 70.0 ± 2.28 | 65.6 ± 2.22 | 0.762 ± 0.0175 | 25.4 ± 1.45 | 15.0 ± 1.17 |
-| mid_market / threshold 5 | 1,809 ± 72.3 | 0.354 ± 0.0184 | 75.8 ± 2.98 | 49.9 ± 2.03 | 0.697 ± 0.0207 | 30.4 ± 1.82 | 16.4 ± 1.37 |
-| sdr / threshold 5 | 1,030 ± 101 | 0.487 ± 0.0148 | 8.90 ± 0.922 | 51.3 ± 5.07 | 0.462 ± 0.0336 | 37.6 ± 1.75 | 18.8 ± 2.42 |
-| dynamic / threshold 5 | 1,988 ± 64.2 | 0.315 ± 0.0192 | 63.1 ± 2.06 | 68.4 ± 2.46 | 0.736 ± 0.0173 | 28.0 ± 1.65 | 17.1 ± 1.52 |
+| fixed / threshold 5 | 2,012 ± 72.9 | 0.295 ± 0.0203 | 69.6 ± 2.48 | 65.3 ± 2.40 | 0.755 ± 0.0203 | 26.2 ± 1.46 | 15.0 ± 1.07 |
+| mid_market / threshold 5 | 1,783 ± 91.4 | 0.358 ± 0.0222 | 74.8 ± 3.77 | 49.2 ± 2.57 | 0.689 ± 0.0275 | 31.2 ± 2.11 | 16.8 ± 1.25 |
+| sdr / threshold 5 | 1,034 ± 100 | 0.487 ± 0.0147 | 8.95 ± 0.916 | 51.5 ± 5.03 | 0.463 ± 0.0332 | 37.5 ± 1.73 | 18.8 ± 2.43 |
+| dynamic / threshold 5 | 1,976 ± 73.2 | 0.318 ± 0.0178 | 62.4 ± 2.51 | 68.2 ± 2.63 | 0.734 ± 0.0189 | 28.0 ± 1.88 | 16.8 ± 1.67 |
 | bill_sharing / threshold 5 | 480 ± 68.1 | 1.11 ± 0.0182 | -16.5 ± 2.34 | 37.6 ± 5.34 | 0.301 ± 0.0317 | 27.2 ± 0.954 | 3.50 ± 0.939 |
 
 ## E2. Storage: none / individual / shared, same total capacity (mid-market)

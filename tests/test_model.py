@@ -97,6 +97,14 @@ def test_membership_off_keeps_everyone():
     assert k["members_final"] == 30 and k["leaves"] == 0
 
 
+@pytest.mark.parametrize("pricing", ["fixed", "mid_market", "sdr", "dynamic"])
+def test_free_membership_keeps_everyone(pricing):
+    """With no participation cost nobody leaves: local prices sit between p_exp and p_imp, so no member is
+    worse off than alone (the 30-day savings must compare the same hours of actual and reference bills)."""
+    k = run(pricing=pricing, pv_share=0.8, membership=True, initial_member_share=0.8, savings_threshold=0).kpis()
+    assert k["leaves"] == 0
+
+
 def test_bill_sharing_drives_prosumers_out():
     k = run(pricing="bill_sharing", membership=True, savings_threshold=2).kpis()
     assert k["prosumer_members_final"] < 12 and k["leaves"] > 0

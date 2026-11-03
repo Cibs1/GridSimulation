@@ -113,7 +113,7 @@ The baseline starts on 1 January 2023 with 30 households and every battery at 50
 | Parameter | Baseline value | Varied in experiments |
 | --- | --- | --- |
 | Number of households | 30 | 20, 30, 50 |
-| Share with PV | 40% (exactly round(n × share) prosumers, chosen at random) | 20–80% |
+| Share with PV | 40% (exactly round(n × share) prosumers, chosen at random) | 0–100% |
 | PV size per prosumer | 2–5 kWp (uniform) | – |
 | Annual demand per household | 2,500–5,000 kWh (uniform) | – |
 | Demand noise | hourly multiplicative noise, standard deviation 10–20% (uniform per household); profile shifted by −1, 0 or +1 h | – |
@@ -238,7 +238,7 @@ Each scenario runs 30 times with seeds 0–29 (`experiments/run_experiments.py`,
 
 | | Design | Scenarios |
 | --- | --- | --- |
-| E1 | Pricing: 6 mechanisms × PV share 20/40/60/80%, membership on (threshold 0 €) | 24 |
+| E1 | Pricing: 6 mechanisms × PV share 0/20/40/60/80/100%, membership on (threshold 0 €) | 36 |
 | E1b | Pricing × membership threshold 0 / 2 / 5 € per 30 days, 40% PV | 18 |
 | E2 | Storage: none vs. individual vs. shared, same total 50 / 100 / 200 kWh | 7 |
 | E2b | Pricing with storage: fixed, mid-market, SDR, dynamic, bill-sharing, each with a 100 kWh shared battery | 5 |

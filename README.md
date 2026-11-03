@@ -77,7 +77,7 @@ jupyter notebook notebooks/02_experiments.ipynb     # figures saved to notebooks
 
 | Experiment | Question | Design |
 | --- | --- | --- |
-| `e1_pricing` | RQ1 pricing, membership and fairness | 6 mechanisms x PV share 20/40/60/80%, membership on (threshold 0) |
+| `e1_pricing` | RQ1 pricing, membership and fairness | 6 mechanisms x PV share 0/20/40/60/80/100%, membership on (threshold 0) |
 | `e1b_membership_threshold` | robustness of RQ1 | 6 mechanisms x threshold 0/2/5 EUR per 30 days |
 | `e2_storage` | RQ2 shared vs individual storage | none / individual / shared x 50/100/200 kWh |
 | `e2b_storage_pricing` | RQ1 x RQ2 pricing with a shared battery | 5 mechanisms, each with a 100 kWh shared battery |

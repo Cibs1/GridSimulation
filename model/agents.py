@@ -80,11 +80,14 @@ class Household(mesa.Agent):
 
     @property
     def bill_alone_eur(self):
-        return self._bill_alone_cum[self.model.hour] if self.model.steps else 0.0
+        """Reference bill over the hours settled so far (the same hours as bill_eur)."""
+        t = self.model.settled_hour
+        return self._bill_alone_cum[t] if t >= 0 else 0.0
 
     @property
     def lost_load_alone_kwh(self):
-        return self._lost_load_alone_cum[self.model.hour] if self.model.steps else 0.0
+        t = self.model.settled_hour
+        return self._lost_load_alone_cum[t] if t >= 0 else 0.0
 
     @property
     def savings_eur(self):

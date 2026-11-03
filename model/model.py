@@ -176,6 +176,7 @@ class Community(mesa.Model):
         self.manager = CommunityManager(self, fixed_price=fixed_price, battery=community_battery,
                                         price_memory=price_memory, battery_income=battery_income)
 
+        self.settled_hour = -1  # last hour whose bills have been booked
         self.leaves = self.joins = 0
         self.flows = dict.fromkeys(
             ["pv", "demand", "self_use", "shared", "battery_charge", "battery_discharge",
@@ -251,6 +252,7 @@ class Community(mesa.Model):
         # 7. Grid exchange, then the manager settles every household's bill
         self.households.do("exchange_with_grid", grid_up)
         self.manager.settle()
+        self.settled_hour = self.hour  # bills now include this hour
 
         self.update_flows()
         self.datacollector.collect(self)
