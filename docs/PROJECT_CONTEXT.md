@@ -46,7 +46,7 @@ model/manager.py     CommunityManager agent (local market, pricing, community ba
 model/battery.py     Battery entity (home and community)
 model/model.py       Community (Mesa Model: environment, grid, schedule, KPIs)
 app.py               interactive Solara dashboard
-experiments/         designs.py (E1-E5), run_experiments.py, run_baseline.py, stats.py, results/*.csv
+experiments/         designs.py (E1-E5), run_experiments.py, run_all.py, stats.py, results/*.csv
 notebooks/           01_data_check.ipynb (input sanity plots), 02_experiments.ipynb (statistics, figures)
 tests/test_model.py  33 verification tests
 docs/ODD.md          model specification (reproduced in Part D)
@@ -64,7 +64,7 @@ docs/ODD.md          model specification (reproduced in Part D)
 ```bash
 pip install -r requirements.txt                     # Python >= 3.12 (repo uses a .venv)
 python -m solara run app.py --no-open               # dashboard at http://localhost:8765 (omit --no-open to open the browser)
-python -m experiments.run_baseline --seed 42 --pricing sdr --storage-mode shared --storage-kwh 100
+python -m experiments.run_all          # all experiments + figures (correr_experiencias.bat)
 python -m pytest                                    # 33 tests, energy balance checked every step
 python -m experiments.run_experiments [e1_pricing ...]   # 6 designs x 30 seeds, ~2,800 runs
 jupyter notebook notebooks/02_experiments.ipynb     # statistics and figures (notebooks/figures/)

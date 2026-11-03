@@ -38,11 +38,13 @@ python scripts/prep_load.py       # E-REDES BTN C profile  -> data/processed/loa
 python scripts/get_weather.py     # PVGIS 2014-2023 PV yield + temperature -> data/processed/weather_porto.csv
 
 # 3a. Interactive visualisation (Mesa + Solara), opens in the browser
-solara run app.py                 # or: python -m solara run app.py  (--no-open: no browser)
+solara run app.py                 # Windows shortcut: correr_visual.bat
 
-# 3b. Run the baseline community for one year and print its KPIs
-python -m experiments.run_baseline --seed 42
+# 3b. All experiments + statistics + figures (section 5 below in one go)
+python -m experiments.run_all     # Windows shortcut: correr_experiencias.bat
 ```
+
+Portuguese step-by-step guide, parameters and a map of the code: [COMO_CORRER.md](COMO_CORRER.md).
 
 ```python
 # Or from Python / a notebook (run from the repo root)
@@ -63,7 +65,7 @@ Scenario options (see `Community.__init__` in `model/model.py`):
 `None`: drawn per seed from 2014-2023; or fix one, e.g. `2023`) and
 `heat_sensitivity` / `cool_sensitivity` (demand change per degree-day colder or
 hotter than usual; `0` switches the temperature effect off).
-For example: `python -m experiments.run_baseline --pricing sdr --storage-mode shared --storage-kwh 100`.
+Scenarios for the experiments are defined in `experiments/designs.py`.
 
 Tariffs are placeholders (0.20 / 0.05 EUR/kWh).
 
@@ -80,9 +82,8 @@ jupyter notebook notebooks/02_experiments.ipynb     # figures saved to notebooks
 ```
 
 Research questions (ODD v0.4): RQ1 best pricing mechanism, RQ2 relative
-savings, RQ3 resilience; demand response is an extension. **The result CSVs
-and figures in the repo are still from ODD v0.3 (weather year 2023 only, no
-temperature effect); rerun step 5 to update them.**
+savings, RQ3 resilience; demand response is an extension. The result CSVs and
+figures were regenerated with the v0.4 model.
 
 | Experiment | Question | Design |
 | --- | --- | --- |

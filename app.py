@@ -298,11 +298,14 @@ def Indicators(model):
     hh = list(model.households)
     demand, pv = df["demand"].sum(), df["pv"].sum()
     savings = sum(h.savings_eur for h in hh) + model.manager.battery_cash_eur
+    bill_alone = sum(h.bill_alone_eur for h in hh)
     pros = [h.savings_eur for h in hh if h.is_prosumer]
     cons = [h.savings_eur for h in hh if not h.is_prosumer]
     rows = [
         ("Members", f"{len(model.members)} of {len(hh)}" + (f"  (left {model.leaves}, joined {model.joins})" if model.membership else "")),
+        ("Weather year", f"{model.weather_year}"),
         ("Community savings", f"{savings:,.0f} EUR"),
+        ("Relative savings (vs no community)", f"{savings / bill_alone:.1%}" if bill_alone > 0 else "–"),
         ("Mean savings: prosumer / consumer", f"{np.mean(pros) if pros else 0:,.1f} / {np.mean(cons) if cons else 0:,.1f} EUR"),
         ("Self-sufficiency", f"{(demand - df['imported'].sum() - df['lost_load'].sum()) / demand:.1%}"),
         ("Self-consumption", f"{(pv - df['exported'].sum() - df['curtailment'].sum()) / pv:.1%}" if pv > 0 else "–"),
@@ -325,16 +328,24 @@ model_params = {
     "membership": {"type": "Checkbox", "value": False, "label": "Membership change (join / leave)"},
     "initial_member_share": {"type": "SliderFloat", "value": 0.8, "label": "Members at start", "min": 0.5, "max": 1.0, "step": 0.05},
     "savings_threshold": {"type": "SliderFloat", "value": 2.0, "label": "Min. savings to stay (EUR / 30 days)", "min": 0.0, "max": 10.0, "step": 0.5},
+    "weather_year": {"type": "Select", "value": "random", "label": "Weather year (PVGIS)",
+                     "values": ["random"] + [str(y) for y in range(2014, 2024)]},
+    "heat_sensitivity": {"type": "SliderFloat", "value": 0.02, "label": "Temperature effect on demand (per degree-day)",
+                         "min": 0.0, "max": 0.06, "step": 0.01},
 }
 
 
 class CommunityViz(Community):
     """Community whose households all start as members unless membership change is on."""
 
-    def __init__(self, membership=False, initial_member_share=0.8, scenario=None, **kwargs):
+    def __init__(self, membership=False, initial_member_share=0.8, weather_year="random", heat_sensitivity=0.02,
+                 scenario=None, **kwargs):
         # On Reset, Mesa passes the seed inside a Scenario object
         if scenario is not None and kwargs.get("rng") is None:
             kwargs["rng"] = scenario.rng
+        # "random": the seed draws the weather year; one slider sets heating and cooling sensitivity
+        kwargs["weather_year"] = None if weather_year in (None, "random") else int(weather_year)
+        kwargs["heat_sensitivity"] = kwargs["cool_sensitivity"] = heat_sensitivity
         super().__init__(membership=membership, initial_member_share=initial_member_share if membership else 1.0,
                          **kwargs)
 

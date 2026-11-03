@@ -219,7 +219,7 @@ Savings are measured against a reference computed per household at initialisatio
 
 ## 8. Experiments, KPIs and statistical analysis
 
-Each scenario runs 30 times with seeds 0–29 (`experiments/run_experiments.py`, process pool; `mesa.batch_run` is not used because the KPIs are run-level quantities computed once at the end). Every KPI is reported as a mean with a 95% t confidence interval. This covers the course requirement for quantitative analysis.
+Each scenario runs 30 times with seeds 0–29 (`experiments/run_experiments.py`, process pool; `experiments/run_all.py` also rebuilds the statistics and figures; `mesa.batch_run` is not used because the KPIs are run-level quantities computed once at the end). Every KPI is reported as a mean with a 95% t confidence interval. This covers the course requirement for quantitative analysis.
 
 **KPIs (per run)**
 
@@ -256,7 +256,7 @@ PV + import + discharge + lost load = demand + export + charge + curtailment
 **Open decisions**
 
 - [x] Final research questions: pricing, relative savings, resilience (v0.4 proposal; demand response as an extension)
-- [ ] Rerun the experiments with the v0.4 model (the CSVs in `experiments/results/` are still from v0.3, weather year 2023 only)
+- [x] Rerun the experiments with the v0.4 model (`python -m experiments.run_all`)
 - [ ] Justify the temperature sensitivity (2% per degree-day) with a source
 - [ ] Exact tariff values and whether to use time-of-use pricing
 - [ ] Justify the participation threshold and *p\_leave* / *p\_join* (e.g. real Portuguese energy-community fees); add them to the sensitivity analysis
