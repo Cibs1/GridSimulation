@@ -4,9 +4,9 @@ Each design maps a scenario label to the Community parameters that differ
 from the baseline. Every scenario runs with the same seeds, so scenarios are
 paired by seed (common random numbers: same households, weather year and outages).
 
-Main research questions (ODD v0.4): RQ1 pricing -> E1, E1b; RQ2 relative
-savings -> E1, E2; RQ3 resilience -> E4. E3 (demand response) is kept as an
-extension and E5 checks robustness.
+Research questions (ODD v0.5): RQ1 pricing mechanisms -> E1, E1b, E2b;
+RQ2 relative savings -> E1, E1c, E2; RQ3 flexibility -> E3 (and E5);
+RQ4 resilience -> E4. E5 checks robustness.
 """
 
 SEEDS = range(30)
@@ -15,18 +15,37 @@ PRICING = ["none", "fixed", "mid_market", "sdr", "dynamic", "bill_sharing"]
 STORAGE_KWH = [50, 100, 200]
 
 # Membership change (7.6) on, 20% of households outside at the start. A member
-# leaves if it saved less than the threshold over the last 30 days, which
-# stands for the cost of taking part (fees, effort). 2 EUR per 30 days in E1.
+# leaves if it saved less than the threshold over the last 30 days. Real
+# Portuguese communities charge consumers no fee to join or leave (30 days'
+# notice), so the base threshold is 0; E1b tests 2 and 5 EUR as a nuisance cost
+# (time, attention, paperwork), about 2-5% of a typical monthly bill.
 MEMBERSHIP = {"membership": True, "initial_member_share": 0.8}
-THRESHOLD = 2.0
+THRESHOLD = 0.0
 
 
 def pricing():
     """E1: pricing mechanism x share of households with PV, with membership change."""
     return {
         f"{p} | pv {int(s * 100)}%": {"pricing": p, "pv_share": s, **MEMBERSHIP, "savings_threshold": THRESHOLD}
-        for s in [0.2, 0.4, 0.6, 0.8]
+        for s in [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
         for p in PRICING
+    }
+
+
+def pv_value():
+    """E1c: share of households with PV, community with and without a shared battery (all members).
+
+    Splits the total saving against no PV and no community into the panels'
+    own saving and the extra from sharing (and from the battery).
+    """
+    configs = {
+        "community": {"pricing": "mid_market"},
+        "community + shared 100 kWh": {"pricing": "mid_market", "storage_mode": "shared", "storage_kwh": 100},
+    }
+    return {
+        f"{c} | pv {int(s * 100)}%": {**params, "pv_share": s}
+        for c, params in configs.items()
+        for s in [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
     }
 
 
@@ -46,6 +65,11 @@ def storage():
         for mode in ["individual", "shared"]:
             scenarios[f"{mode} {kwh} kWh"] = {"storage_mode": mode, "storage_kwh": kwh}
     return scenarios
+
+
+def storage_pricing():
+    """E2b: pricing mechanism with a 100 kWh shared battery (its energy counts as supply in the price)."""
+    return {f"{p} | shared 100 kWh": {"pricing": p, "storage_mode": "shared", "storage_kwh": 100} for p in PRICING[1:]}
 
 
 def demand_response():
@@ -89,14 +113,38 @@ def sensitivity():
         scenarios[f"export price {p}"] = {**base, "export_price": p}
     for s in [0.0, 0.04]:
         scenarios[f"temperature sensitivity {s}"] = {**base, "heat_sensitivity": s, "cool_sensitivity": s}
+    scenarios["battery income unallocated"] = {**base, "battery_income": "unallocated"}
+    # Bi-hourly tariff: cheap off-peak hours are at night, so demand response may move load away from midday
+    scenarios["bi-hourly tariff"] = {**base, "tariff": "bi_hourly"}
+    scenarios["flexibility 0.1"] = {**base, "flexibility": 0.1}
+    scenarios["bi-hourly tariff + flexibility 0.1"] = {**base, "tariff": "bi_hourly", "flexibility": 0.1}
     return scenarios
+
+
+def weather_temperature():
+    """E6: does the weather year matter, and does the temperature effect matter?
+
+    Every weather year (2014-2023) with the temperature effect on (2% per
+    degree-day) and off, baseline community otherwise. With the same 30 seeds
+    in every scenario, each (year, seed) pair is run with and without the
+    temperature effect (paired test), and each seed is run in every year
+    (how much of the variation comes from the weather and how much from the households).
+    """
+    return {
+        f"year {y} | temperature {s}": {"weather_year": y, "heat_sensitivity": s, "cool_sensitivity": s}
+        for y in range(2014, 2024)
+        for s in [0.0, 0.02]
+    }
 
 
 DESIGNS = {
     "e1_pricing": pricing,
     "e1b_membership_threshold": membership_threshold,
+    "e1c_pv_value": pv_value,
     "e2_storage": storage,
+    "e2b_storage_pricing": storage_pricing,
     "e3_demand_response": demand_response,
     "e4_resilience": resilience,
     "e5_sensitivity": sensitivity,
+    "e6_weather_temperature": weather_temperature,
 }

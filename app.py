@@ -22,7 +22,7 @@ from mesa.visualization.solara_viz import ModelController, ModelCreator
 from mesa.visualization.utils import update_counter
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from model.model import DATA_DIR, PRICING_MECHANISMS, STORAGE_MODES, Community  # noqa: E402
+from model.model import DATA_DIR, PRICING_MECHANISMS, STORAGE_MODES, TARIFFS, Community  # noqa: E402
 
 LOCAL_TIME = pd.to_datetime(pd.read_csv(DATA_DIR / "pv_porto.csv")["time_utc"], utc=True).dt.tz_convert("Europe/Lisbon")
 WINDOW_H = 72
@@ -149,7 +149,7 @@ def community_figure(model):
         member = h.is_member and model.pricing != "none"
         house = (x - 0.6 * w * np.cos(a), y - 0.6 * w * np.sin(a))
         hub = (hub_r * np.cos(a), hub_r * np.sin(a))
-        out_kwh, in_kwh = h.sold_local + h.exported, h.bought_local + h.imported
+        out_kwh, in_kwh = h.sold_local + h.to_battery + h.exported, h.bought_local + h.imported
         line = dict(ls="-" if member else (0, (2, 2)), alpha=1.0 if member else 0.5)
         if out_kwh >= in_kwh:
             flow_line(ax, house, hub, out_kwh, color if out_kwh > 1e-6 else GRID, 3.0, **line)
@@ -274,17 +274,18 @@ def price_figure(model):
     ax = fig.add_subplot()
     style_axes(ax)
     df, t = window(model)
-    ax.axhline(model.import_price, color=GRAY, ls="--", lw=1)
     ax.axhline(model.export_price, color=GRAY, ls=":", lw=1)
     if len(df):
+        grid_price = model.import_prices[model.hour - len(df) + 1:model.hour + 1]
+        ax.step(t, grid_price, where="post", color=GRAY, ls="--", lw=1)  # bi-hourly tariff changes over the day
         ax.plot(t, df["local_price"], color=ORANGE, lw=1.6, label="local price")
         ax.plot(t, df["effective_price"], color=BLUE, lw=1.6, label="price members paid per kWh")
-        ax.text(t[0], model.import_price, " grid import", va="bottom", fontsize=8, color=INK2)
+        ax.text(t[0], grid_price[0], " grid import", va="bottom", fontsize=8, color=INK2)
         ax.text(t[0], model.export_price, " grid export", va="bottom", fontsize=8, color=INK2)
         ax.legend(loc="lower right", fontsize=8, frameon=False, labelcolor=INK2, ncol=2)
         time_axis(ax, fig, model)
-    ax.set_ylim(0, model.import_price * 1.15)
-    ax.set_title(f"Prices ({model.pricing}), last {WINDOW_H} h", loc="left", fontsize=10, weight="bold", color=INK)
+    ax.set_ylim(0, model.import_prices.max() * 1.15)
+    ax.set_title(f"Prices ({model.pricing}, {model.tariff} tariff), last {WINDOW_H} h", loc="left", fontsize=10, weight="bold", color=INK)
     ax.set_ylabel("EUR/kWh", color=INK2, fontsize=9)
     fig.tight_layout()
     return fig
@@ -297,7 +298,7 @@ def Indicators(model):
     df = model.datacollector.get_model_vars_dataframe()
     hh = list(model.households)
     demand, pv = df["demand"].sum(), df["pv"].sum()
-    savings = sum(h.savings_eur for h in hh) + model.manager.battery_cash_eur
+    savings = sum(h.savings_eur for h in hh) + model.manager.battery_cash_unallocated_eur
     bill_alone = sum(h.bill_alone_eur for h in hh)
     pros = [h.savings_eur for h in hh if h.is_prosumer]
     cons = [h.savings_eur for h in hh if not h.is_prosumer]
@@ -307,6 +308,8 @@ def Indicators(model):
         ("Community savings", f"{savings:,.0f} EUR"),
         ("Relative savings (vs no community)", f"{savings / bill_alone:.1%}" if bill_alone > 0 else "–"),
         ("Mean savings: prosumer / consumer", f"{np.mean(pros) if pros else 0:,.1f} / {np.mean(cons) if cons else 0:,.1f} EUR"),
+        *([("Paid for energy from the community battery", f"{model.manager.battery_revenue_eur:,.0f} EUR")]
+          if model.manager.battery is not None else []),
         ("Self-sufficiency", f"{(demand - df['imported'].sum() - df['lost_load'].sum()) / demand:.1%}"),
         ("Self-consumption", f"{(pv - df['exported'].sum() - df['curtailment'].sum()) / pv:.1%}" if pv > 0 else "–"),
         ("Peak grid import", f"{df['imported'].max():.1f} kW"),
@@ -321,13 +324,14 @@ model_params = {
     "n_households": {"type": "SliderInt", "value": 30, "label": "Households", "min": 10, "max": 60, "step": 5},
     "pv_share": {"type": "SliderFloat", "value": 0.4, "label": "Share with PV", "min": 0.0, "max": 1.0, "step": 0.1},
     "pricing": {"type": "Select", "value": "mid_market", "label": "Pricing mechanism", "values": list(PRICING_MECHANISMS)},
+    "tariff": {"type": "Select", "value": "simple", "label": "Grid tariff", "values": list(TARIFFS)},
     "storage_mode": {"type": "Select", "value": "none", "label": "Storage", "values": list(STORAGE_MODES)},
     "storage_kwh": {"type": "SliderInt", "value": 100, "label": "Battery capacity, total (kWh)", "min": 0, "max": 300, "step": 25},
     "flexibility": {"type": "SliderFloat", "value": 0.0, "label": "Demand-response flexibility", "min": 0.0, "max": 0.3, "step": 0.05},
     "outage_rate": {"type": "SliderFloat", "value": 4.0, "label": "Outages per year", "min": 0.0, "max": 24.0, "step": 1.0},
     "membership": {"type": "Checkbox", "value": False, "label": "Membership change (join / leave)"},
     "initial_member_share": {"type": "SliderFloat", "value": 0.8, "label": "Members at start", "min": 0.5, "max": 1.0, "step": 0.05},
-    "savings_threshold": {"type": "SliderFloat", "value": 2.0, "label": "Min. savings to stay (EUR / 30 days)", "min": 0.0, "max": 10.0, "step": 0.5},
+    "savings_threshold": {"type": "SliderFloat", "value": 0.0, "label": "Min. savings to stay (EUR / 30 days)", "min": 0.0, "max": 10.0, "step": 0.5},
     "weather_year": {"type": "Select", "value": "random", "label": "Weather year (PVGIS)",
                      "values": ["random"] + [str(y) for y in range(2014, 2024)]},
     "heat_sensitivity": {"type": "SliderFloat", "value": 0.02, "label": "Temperature effect on demand (per degree-day)",

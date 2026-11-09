@@ -41,7 +41,7 @@ docs/ODD.md          model documentation
 ## Data decisions
 - **PV**: PVGIS API `https://re.jrc.ec.europa.eu/api/v5_3/seriescalc`, Porto (lat 41.15, lon -8.61), `pvcalculation=1`, `peakpower=1` (per-kWp profile), `loss=14`, `optimalangles=1`, `outputformat=json`. Column `P` is in W → `/1000` = kWh per kWp per hour. Timestamps are **UTC** (format `%Y%m%d:%H%M`), so shift to local time. Use a **non-leap year** (e.g. 2023). Save to CSV; the model never calls the API.
 - **Load**: E-REDES/ERSE standard profile **BTN C** (residential, ≤13.8 kVA, ≤7,140 kWh/yr), 15-min, normalised → sum to hourly, scale by each household's annual kWh, add per-household noise (±10–20%) and a small peak shift. UPAC profiles exist for self-consumption. Optional realism: London Smart Meters dataset (UK, rescale). UCI ElectricityLoadDiagrams20112014 (PT, 370 clients, mixed types) only for variability checks.
-- **Tariffs**: Portuguese regulated tariffs (ERSE); export price well below import price. Exact values still TBD.
+- **Tariffs**: ERSE regulated simple tariff 0.1711 EUR/kWh (base); bi-hourly 0.2045 / 0.1143 off-peak 22:00-08:00 (E5 sensitivity; off-peak moves to 22:30-08:30 in H2 2027, kept at 22-8 with 1 h steps). Export 0.05 EUR/kWh (fixed buy-back offers; OMIE minus retailer fee gives the same).
 
 ## Model summary (full spec in docs/ODD.md)
 - Agents: `Household` (demand, `pv_kwp`, optional home battery, `flexibility`, `cooperation`, `is_member`, cost/revenue accumulators) and one `CommunityManager` (`model.manager`: market clearing, pricing, community battery, settlement, price forecast). Entities: Battery, Grid, Community (model).
@@ -57,14 +57,16 @@ docs/ODD.md          model documentation
 
 ## Open decisions (with the group)
 - Narrow to 2–3 research questions (currently 4: pricing, storage, demand response, resilience)
-- Exact tariff values / time-of-use or not
-- Participation threshold for membership (2 EUR/30 days used in E1; needs a justification, e.g. real CER fees)
+- Battery investment cost (none in the model)
 
 ## Decided (Oct 2026)
 - Membership change (7.6) is in: monthly review, 20% start outside, leave if 30-day savings < threshold (p_leave 0.5), join if same-type members saved (p_join 0.2).
 - Grid price stays flat; new `dynamic` community price p_exp + (p_imp - p_exp) * D / (S + D). SDR (Liu) kept for comparison.
 - Demand response is price-responsive: shifts evening load to hours with the lowest forecast effective price (exponentially smoothed past prices).
-- docs/ODD.md updated to v0.2 (Oct 21) to match the code; keep it in sync with every model change.
+- Tariffs as above (Oct 22).
+- Membership threshold 0 EUR in the base (real communities: free entry/exit, 30 days' notice); 2 / 5 EUR per 30 days only as a nuisance cost in E1b.
+- The community battery only stores surplus (no trading). Members pay the local price for energy it delivers, and that money goes to the prosumers who filled it, pro rata to the energy each put in (`battery_income="prosumers"`). Losses are reported in kWh (`storage_losses_kwh`). Its deliverable energy counts as supply in the price (SDR, dynamic), with a floor of p_exp / round-trip efficiency when it delivers, so storing never pays less than exporting and buyers never pay more than p_imp.
+- docs/ODD.md is at v0.4 (Oct 22); keep it in sync with every model change. docs/PROJECT_CONTEXT.md is a generated snapshot for other assistants.
 
 ## Next steps
 1. ~~Create repo structure, push to GitHub~~ (done)

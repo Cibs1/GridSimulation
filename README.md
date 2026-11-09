@@ -67,7 +67,7 @@ Scenario options (see `Community.__init__` in `model/model.py`):
 hotter than usual; `0` switches the temperature effect off).
 Scenarios for the experiments are defined in `experiments/designs.py`.
 
-Tariffs are placeholders (0.20 / 0.05 EUR/kWh).
+Grid tariffs: ERSE simple tariff 0.1711 EUR/kWh (`tariff="simple"`, default) or bi-hourly 0.1143 off-peak 22:00-08:00 / 0.2045 otherwise (`tariff="bi_hourly"`); export 0.05 EUR/kWh. The community battery only stores surplus: what members pay for the energy it delivers goes to the prosumers who filled it (`battery_income="prosumers"`, default), or the community buys the surplus and keeps that money (`"unallocated"`).
 
 ```bash
 # 4. Verification tests (energy balance, money conservation, reproducibility, ...)
@@ -81,18 +81,19 @@ python -m experiments.run_experiments               # all, or name some: e1_pric
 jupyter notebook notebooks/02_experiments.ipynb     # figures saved to notebooks/figures/
 ```
 
-Research questions (ODD v0.4): RQ1 best pricing mechanism, RQ2 relative
-savings, RQ3 resilience; demand response is an extension. The result CSVs and
-figures were regenerated with the v0.4 model.
+Research questions (ODD v0.5): RQ1 pricing mechanisms, RQ2 relative savings,
+RQ3 flexibility, RQ4 resilience.
 
 | Experiment | Question | Design |
 | --- | --- | --- |
-| `e1_pricing` | RQ1 pricing, membership and fairness; RQ2 savings vs PV share | 6 mechanisms x PV share 20/40/60/80%, membership on (threshold 2 EUR/30 days) |
+| `e1_pricing` | RQ1 pricing, membership and fairness | 6 mechanisms x PV share 0/20/40/60/80/100%, membership on (threshold 0) |
 | `e1b_membership_threshold` | robustness of RQ1 | 6 mechanisms x threshold 0/2/5 EUR per 30 days |
+| `e1c_pv_value` | RQ2 savings and value of PV | PV share 0-100% x community with / without a shared battery; saving vs no PV split into panels, sharing, battery |
 | `e2_storage` | RQ2 relative savings: shared vs individual storage | none / individual / shared x 50/100/200 kWh |
-| `e3_demand_response` | extension: flexibility | mid-market / SDR / dynamic x flexibility 0 / 0.1 / 0.2 |
-| `e4_resilience` | RQ3 resilience to outages | 3 outage regimes x 3 storage options x 20/30/50 households |
-| `e5_sensitivity` | robustness | one-at-a-time: cooperation, battery efficiency, export price, temperature sensitivity |
+| `e2b_storage_pricing` | RQ1 x RQ2 pricing with a shared battery | 5 mechanisms, each with a 100 kWh shared battery |
+| `e3_demand_response` | RQ3 flexibility | mid-market / SDR / dynamic x flexibility 0 / 0.1 / 0.2 |
+| `e4_resilience` | RQ4 resilience to outages | 3 outage regimes x 3 storage options x 20/30/50 households |
+| `e5_sensitivity` | robustness | one-at-a-time: cooperation, battery efficiency, export price, battery income rule, bi-hourly tariff, flexibility, temperature sensitivity |
 
 Scenarios share the same 30 seeds (same households, weather and outages), so
 they can be compared with paired tests. Statistics live in `experiments/stats.py`

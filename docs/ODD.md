@@ -1,8 +1,18 @@
-# Community Microgrid ABM — ODD Protocol (Draft v0.4)
+# Community Microgrid ABM — ODD Protocol (Draft v0.5)
 
-Nov 2, 2026 · @Ricardo, @Guilherme
+Nov 9, 2026 · @Ricardo, @Guilherme
 
-Changes since v0.3 (proposal, Nov 2): the weather is now a stochastic input — each run draws one of ten real PVGIS years for Porto (2014–2023), with PV yield and air temperature; household demand responds to days colder or hotter than usual (heating/cooling degree-days relative to the average climate); new KPI **relative savings**; research questions reduced to three (pricing, relative savings, resilience), with demand response kept as an extension.
+v0.5 (Nov 9) merges the two v0.4 drafts below and fixes the research questions to four: pricing mechanisms, relative savings, flexibility and resilience.
+
+v0.4 (@Guilherme, Nov 2): the weather is a stochastic input — each run draws one of ten real PVGIS years for Porto (2014–2023), with PV yield and air temperature; household demand responds to days colder or hotter than usual (heating/cooling degree-days relative to the average climate); new KPI **relative savings**.
+
+v0.4 (@Ricardo, Nov 3): real tariffs (ERSE simple tariff 0.1711 €/kWh as the base;
+bi-hourly tariff as a sensitivity scenario; export 0.05 €/kWh justified); base
+membership threshold set to 0 € (joining and leaving real communities is free);
+the community battery only stores energy: what members pay for the energy it
+delivers goes to the prosumers who filled it; its round-trip losses are reported in kWh;
+the energy it can deliver counts as local supply when the price is set, and its energy
+is never priced below p_exp / round-trip efficiency, so storing is never worse than exporting.
 
 Changes since v0.2 (Oct 21): the local market, community battery and billing are
 run by a new **CommunityManager** agent instead of the model itself. Behaviour and
@@ -23,9 +33,8 @@ The model tests which local energy-sharing and pricing rules give a residential 
 
 1. **Pricing:** Which internal pricing mechanism (fixed price, mid-market, supply–demand ratio, dynamic, bill-sharing) is best for the community: the largest total savings versus no community when households can leave a community that does not pay off, and the fairest split of those savings?
 2. **Relative savings:** How much do households save, as a share of what they would pay without a community, and how does this differ between households with and without PV and change with the share of PV households and with storage (shared vs individual)?
-3. **Resilience:** During a grid outage, what share of demand can the community cover, and how does that change with community size and the PV/storage mix?
-
-*Extension (if time allows):* how much price-responsive demand response adds on top of sharing, and what it does to the peak grid import.
+3. **Flexibility:** How much does price-responsive demand response (shifting flexible load to cheaper hours) add on top of sharing, and what does it do to the peak grid import?
+4. **Resilience:** During a grid outage, what share of demand can the community cover, and how does that change with community size and the PV/storage mix?
 
 **Patterns the model must reproduce** (checked during validation)
 
@@ -52,7 +61,7 @@ The model has two agent types: the **Household** (many) and the **CommunityManag
 | Household | `cost_eur`, `revenue_eur`, `energy_imported_kwh`, `energy_exported_kwh`, `energy_shared_kwh`, `lost_load_kwh` | €, kWh | dynamic, accumulated |
 | Household | reference bill and lost load without community (see 7.7) | €, kWh | static series |
 | Battery | `capacity_kwh`, `soc`, `p_max_kw` (= C-rate × capacity), round-trip efficiency | kWh, 0–1, kW, – | static / dynamic |
-| Grid | `import_price`, `export_price` | €/kWh | input, flat |
+| Grid | `import_prices` (import price for each hour; flat under the simple tariff), `export_price` | €/kWh | input |
 | Grid | `grid_available` (false during an outage) | bool per hour | generated at start |
 | Community | `weather_year`, `pv_yield` (kWh per kWp), `temperature` (°C), `demand_factor` (temperature effect on demand) | –, kWh/kWp, °C, – | drawn at start, hourly series |
 | Community | `pricing`, `storage_mode` (none / individual / shared), `storage_kwh`, `membership` | – | scenario parameter |
@@ -60,7 +69,9 @@ The model has two agent types: the **Household** (many) and the **CommunityManag
 | CommunityManager | `battery` (the community battery, only in the "shared" storage mode), `fixed_price` | –, €/kWh | static |
 | CommunityManager | `local_price` (internal price this step) | €/kWh | dynamic |
 | CommunityManager | `effective_price` (average price a member paid per kWh of deficit this step) and `price_forecast` (by hour of day) | €/kWh | dynamic |
-| CommunityManager | `battery_cash_eur` (net income of the community battery) | € | dynamic, accumulated |
+| CommunityManager | `battery_revenue_eur` (paid by members for energy delivered by the community battery) and `battery_cash_unallocated_eur` (battery money paid to no household) | € | dynamic, accumulated |
+| Household | `to_battery` (surplus put into the community battery this step), `battery_energy_kwh` (all the energy it has put in: its stake in the battery), `battery_income_eur` (money received for that energy) | kWh, € | dynamic |
+| Battery | `charged_kwh`, `discharged_kwh`, `losses_kwh` (energy lost in charging and discharging) | kWh | dynamic, accumulated |
 
 **Scales**
 
@@ -107,14 +118,16 @@ The baseline starts on 1 January 2023 with 30 households and every battery at 50
 | Parameter | Baseline value | Varied in experiments |
 | --- | --- | --- |
 | Number of households | 30 | 20, 30, 50 |
-| Share with PV | 40% (exactly round(n × share) prosumers, chosen at random) | 20–80% |
+| Share with PV | 40% (exactly round(n × share) prosumers, chosen at random) | 0–100% |
 | PV size per prosumer | 2–5 kWp (uniform) | – |
 | Annual demand per household | 2,500–5,000 kWh (uniform) | – |
 | Demand noise | hourly multiplicative noise, standard deviation 10–20% (uniform per household); profile shifted by −1, 0 or +1 h | – |
 | Weather year | drawn per seed from 2014–2023 (uniform) | can be fixed (e.g. 2023) |
 | Temperature effect | ±2% demand per heating degree-day (base 15 °C) or cooling degree-day (base 22 °C) above/below the average climate for that day | 0 / 4% |
 | Pricing mechanism | mid-market | all six (7.3) |
-| Grid prices | import 0.20 €/kWh, export 0.05 €/kWh, flat (placeholders) | export 0.03 / 0.08 |
+| Grid import tariff | ERSE simple tariff: 0.1711 €/kWh at all hours | ERSE bi-hourly: 0.1143 €/kWh off-peak (22:00–08:00), 0.2045 €/kWh otherwise |
+| Grid export price | 0.05 €/kWh | 0.03 / 0.08 |
+| Payment for community battery energy | to the prosumers who filled it, when the energy is used (7.2) | the community buys the surplus when it charges and keeps the income (unallocated) |
 | Fixed local price | 0.10 €/kWh | – |
 | Storage | none | shared or individual, 50 / 100 / 200 kWh total |
 | Battery C-rate, round-trip efficiency | 0.5, 90% | efficiency 80% / 95% |
@@ -122,7 +135,7 @@ The baseline starts on 1 January 2023 with 30 households and every battery at 50
 | `dr_threshold` | 0–0.03 €/kWh (uniform per household) | – |
 | `cooperation` | 1.0 (all cooperate) | 0.5, 0.75 |
 | Outages | 4 per year, 1–8 h | 12 per year; 4–12 h |
-| Membership change | off; all households members | on: 80% members at start, threshold 0 / 2 / 5 € per 30 days, p_leave 0.5, p_join 0.2 |
+| Membership change | off; all households members | on: 80% members at start, threshold 0 € (base) or 2 / 5 € per 30 days, p_leave 0.5, p_join 0.2 |
 
 In the "individual" storage mode the total capacity is split over prosumers in proportion to their PV size: a home battery charges only from its own PV, so it would be idle in a consumer's home.
 
@@ -137,7 +150,8 @@ Hourly time series drive the model. They are prepared once by scripts, saved as 
 | PV yield per kWp, Porto | [PVGIS v5.3](https://re.jrc.ec.europa.eu/pvg_tools/en/) (EU JRC), PVGIS-SARAH3, lat 41.15, lon −8.61, year 2023, optimal angles (35°, azimuth 3°), 14% system losses | `scripts/get_pvgis.py`: hourly power of a 1 kWp system (W) → kWh per kWp. Annual yield 1,520 kWh/kWp. Scaled by each household's `pv_kwp`. |
 | Weather years, Porto: PV yield per kWp and air temperature | PVGIS v5.3, PVGIS-SARAH3 (radiation) and ERA5 (temperature), same point, losses and panel angles (35°, azimuth 3°) as above, years 2014–2023 | `scripts/get_weather.py`: hourly P → kWh per kWp and T2m → `temp_c`; each year laid on the 2023 hourly timeline by day of year and hour (29 February dropped in leap years), saved to `data/processed/weather_porto.csv` (8,760 rows per year). Annual yield 1,386–1,593 kWh/kWp; mean temperature 15.1–16.0 °C. The 2023 year matches `pv_porto.csv` to within 0.05 kWh/kWp per year. |
 | Household load shape | [E-REDES](https://www.e-redes.pt/pt-pt/perfis-de-consumo) / ERSE standard profile **BTN C** for 2023 (low-voltage residential, ≤13.8 kVA, ≤7,140 kWh/yr), 15-min, legal time | `scripts/prep_load.py`: quarter-hours summed to hours and normalised to sum to 1. Scaled by each household's annual demand, with noise and shift added in the model (section 5). |
-| Grid import and export prices | Portuguese regulated tariffs ([ERSE](https://www.erse.pt/)) | Placeholders until decided (flat 0.20 / 0.05 €/kWh). |
+| Grid import price | ERSE regulated tariffs for low-voltage households ([ERSE](https://www.erse.pt/)): simple 0.1711 €/kWh; bi-hourly 0.2045 €/kWh outside off-peak and 0.1143 €/kWh off-peak | Energy price per kWh. Bi-hourly uses the daily cycle with off-peak 22:00–08:00 legal time. From the second half of 2027 ERSE moves off-peak to 22:30–08:30; with 1 h steps the model keeps 22:00–08:00. |
+| Grid export price | Typical fixed-price buy-back offers for small producers (about 0.05 €/kWh, e.g. Repsol). Indexed offers pay the OMIE wholesale price (average 65.6 €/MWh in Jan–Oct 2025, APREN) minus a 20–25% retailer fee, also about 0.05 €/kWh. | 0.05 €/kWh; 0.03 and 0.08 in the sensitivity analysis. |
 | Outage events | Generated inside the model | See 7.5. |
 
 ## 7. Submodels
@@ -168,17 +182,19 @@ The household first uses its own PV (self-use = min(PV, demand)). If *n\_i* > 0 
 SoC(t+1) = SoC(t) + \frac{\eta_c \, E_{ch}(t) - E_{dis}(t) / \eta_d}{C}
 ```
 
-Here *C* is capacity (kWh), η\_c = η\_d = √(round-trip efficiency), and *E\_ch*, *E\_dis* (measured on the AC side) are limited by *p\_max* × 1 h and by SoC staying within \[0, 1\]. The community battery charges only from members' offers left over after the market and discharges only to members' bids left over after the market; it does not charge from the grid and keeps no reserve for outages. It buys its charge from sellers and sells its discharge to buyers at the step's local price; its net income (`battery_cash_eur`) belongs to the community and counts towards community savings.
+Here *C* is capacity (kWh), η\_c = η\_d = √(round-trip efficiency), and *E\_ch*, *E\_dis* (measured on the AC side) are limited by *p\_max* × 1 h and by SoC staying within \[0, 1\]. The community battery charges only from members' offers left over after the market and discharges only to members' bids left over after the market; it does not charge from the grid and keeps no reserve for outages. The battery does not trade: it only stores the members' leftover surplus and gives it back to members with a deficit. Surplus that goes into the battery is not sold at that moment; each seller's share is recorded (`to_battery`) and adds to its stake (`battery_energy_kwh`). Members served from the battery pay for that energy at the local price of the hour it is delivered, like any local energy. That money is paid to the households that filled the battery, in proportion to the energy each has put in since 1 January, whether or not it is still a member. So prosumers are compensated for the surplus they store when it is used, at the price of that hour; because of the round-trip losses, less energy comes out than went in (`losses_kwh`, about 10% at 90% efficiency). In the baseline (seed 42, shared 100 kWh, mid-market) prosumers receive about 0.10 € per kWh they put in, against 0.05 € for exporting it. Only prosumers can charge it. Money for the initial charge (50% SoC), before anyone has filled the battery, is not paid out and counts directly towards community savings; energy still stored at the end of the year is not paid for (the two roughly offset each other). The alternative rule `battery_income="unallocated"` treats the battery as owned by the community: the community buys the surplus from the sellers at the local price when it charges and keeps the income from discharging. Neither rule changes total community savings; they only change how savings are split. The model has no battery investment cost.
 
 ### 7.3 Local market and pricing mechanisms
 
-Total supply *S* = sum of members' offers and total demand *D* = sum of members' bids. Traded volume = min(*S*, *D*), allocated pro rata to sellers and buyers. *p\_imp* and *p\_exp* are the grid import and export prices. Except for bill-sharing, both sides of every local trade use the same price.
+Total supply *S* = sum of members' offers and total demand *D* = sum of members' bids. Traded volume = min(*S*, *D*), allocated pro rata to sellers and buyers.
+
+When there is a community battery and the members' offers leave part of the deficit unserved (*S* < *D*), all the energy the battery can deliver this hour, *B* (limited by its power limit and stored energy), also counts as local supply when the price is set: the formulas below use *S* + *B* in place of *S*. So under SDR and dynamic pricing, the fuller the battery the lower the price in the evening and at night, and a nearly empty battery leaves it close to *p\_imp*. The battery is not counted when members' offers already cover demand, since it then delivers nothing. In hours when the battery delivers energy, the local price is at least *p\_exp* / (round-trip efficiency) (0.0556 €/kWh at 90%). After losses, a prosumer then earns at least the export price for each kWh it stores, so storing is never worse than exporting; buyers still pay less than *p\_imp*. The floor binds mostly under SDR, whose price falls to *p\_exp* whenever supply covers demand, and occasionally under dynamic pricing when a full battery meets a small deficit. *p\_imp* and *p\_exp* are the grid import and export prices in that hour (*p\_imp* changes over the day under the bi-hourly tariff). Except for bill-sharing, both sides of every local trade use the same price.
 
 | Mechanism | Local price rule |
 | --- | --- |
 | No community (reference) | Every household trades only with the grid |
 | Fixed price | One constant price between *p\_exp* and *p\_imp* (0.10 €/kWh) |
-| Mid-market rate | (*p\_imp* + *p\_exp*) / 2; with flat grid prices this is also constant |
+| Mid-market rate | (*p\_imp* + *p\_exp*) / 2; constant under the simple tariff |
 | Supply–demand ratio (SDR) | Liu et al. (2017), formula below |
 | Dynamic | Symmetric supply–demand price, formula below |
 | Bill-sharing | Long et al. (2017): the community nets its members' grid exchange; the import bill is split by each member's deficit and the export income by each member's offer. Energy exchanged between members has no price. |
@@ -211,7 +227,7 @@ Outages start as a Poisson process with rate λ (baseline: 4 per year) and last 
 
 ### 7.6 Membership change
 
-Every 30 days (at local midnight), each household compares its savings over the last 30 days with the no-community reference (7.7). A **member** whose savings are below a threshold leaves with probability *p\_leave* (0.5). The threshold stands for the cost of taking part (fees, effort). A **non-member** joins with probability *p\_join* (0.2) if the average 30-day savings of current members of its own type (prosumer or consumer) exceed the threshold. Decisions use the state before the review. Non-members trade only with the grid; they keep any home battery and can still do demand response on their own (7.4). In membership scenarios 20% of households start outside the community.
+Every 30 days (at local midnight), each household compares its savings over the last 30 days with the no-community reference (7.7). A **member** whose savings are below a threshold leaves with probability *p\_leave* (0.5). The threshold stands for the cost of taking part. Real Portuguese energy communities charge consumers nothing to join or leave (Iberdrola: no joining or leaving costs, 30 days' notice; Greenvolt: no joining cost; HEN is the exception, with a 15-year contract and a penalty for leaving early), so the base threshold is 0 €, and the 30-day notice matches the monthly review. Thresholds of 2 and 5 € per 30 days are tested as a nuisance cost (time, attention, paperwork); against ERSE's estimated average bills of 37.77 €/month (couple, 1,900 kWh/year) and 97.73 €/month (family, 5,000 kWh/year), 2 € is about 2–5% of the bill. A **non-member** joins with probability *p\_join* (0.2) if the average 30-day savings of current members of its own type (prosumer or consumer) exceed the threshold. Decisions use the state before the review. Non-members trade only with the grid; they keep any home battery and can still do demand response on their own (7.4). In membership scenarios 20% of households start outside the community.
 
 ### 7.7 No-community reference
 
@@ -225,25 +241,29 @@ Each scenario runs 30 times with seeds 0–29 (`experiments/run_experiments.py`,
 
 | KPI | Definition | Answers |
 | --- | --- | --- |
-| Community savings | Σ households (reference bill − actual bill) + community battery income, €/year; equals reference grid bill − actual grid bill | RQ1, RQ2 |
+| Community savings | Σ households (reference bill − actual bill) + community battery money not paid to any household, €/year; equals reference grid bill − actual grid bill | RQ1–RQ3 |
 | Relative savings | community savings / Σ households' reference bills, % | RQ2 |
+| Storage | energy paid for from the community battery, €; energy lost in all batteries, kWh | RQ2 |
+| Value of PV | panels' own saving: Σ households (bill with no PV and no community − bill alone with PV), €/year; added to community savings it gives the total saving against a neighbourhood with no PV and no community | RQ1, RQ2 |
 | Self-sufficiency | (demand − imported − lost load) / demand, % | RQ2, RQ3 |
 | Self-consumption | (PV − exported − curtailment) / PV, % | RQ2 |
-| Peak grid import | highest hourly import, kW | RQ2, extension |
+| Peak grid import | highest hourly import, kW | RQ2, RQ3 |
 | Fairness | Gini coefficient of per-household savings (0 = equal; can exceed 1 when some savings are negative), mean savings of prosumers and consumers | RQ1 |
 | Membership | average share of households in the community over the year; members and prosumer members at the end; number of leaves and joins | RQ1 |
-| Resilience | share of demand served during outages, %; lost load, kWh (and lost load of the reference); curtailment, kWh | RQ3 |
+| Resilience | share of demand served during outages, %; lost load, kWh (and lost load of the reference); curtailment, kWh | RQ4 |
 
 **Experiment design** (`experiments/designs.py`)
 
 | | Design | Scenarios |
 | --- | --- | --- |
-| E1 | Pricing: 6 mechanisms × PV share 20/40/60/80%, membership on (threshold 2 € per 30 days) | 24 |
+| E1 | Pricing: 6 mechanisms × PV share 0/20/40/60/80/100%, membership on (threshold 0 €) | 36 |
 | E1b | Pricing × membership threshold 0 / 2 / 5 € per 30 days, 40% PV | 18 |
+| E1c | Value of PV: PV share 0–100% × community without / with a 100 kWh shared battery (mid-market, all members); total saving vs no PV split into panels, sharing and battery | 12 |
 | E2 | Storage: none vs. individual vs. shared, same total 50 / 100 / 200 kWh | 7 |
+| E2b | Pricing with storage: fixed, mid-market, SDR, dynamic, bill-sharing, each with a 100 kWh shared battery | 5 |
 | E3 | Demand response: flexibility 0 / 0.1 / 0.2 × mid-market, SDR, dynamic | 9 |
 | E4 | Resilience: 3 outage regimes (4/yr 1–8 h, 12/yr 1–8 h, 4/yr 4–12 h) × no / individual / shared 100 kWh storage × 20 / 30 / 50 households | 27 |
-| E5 | Sensitivity (one at a time, around mid-market + 100 kWh shared battery): cooperation 0.5 / 0.75, battery efficiency 80% / 95%, export price 0.03 / 0.08 €/kWh, temperature sensitivity 0 / 4% | 9 |
+| E5 | Sensitivity (one at a time, around mid-market + 100 kWh shared battery): cooperation 0.5 / 0.75, battery efficiency 80% / 95%, export price 0.03 / 0.08 €/kWh, battery income unallocated, bi-hourly tariff, flexibility 0.1 with the simple and the bi-hourly tariff, temperature sensitivity 0 / 4% | 13 |
 
 **Statistics** (`experiments/stats.py`, `notebooks/02_experiments.ipynb`): Shapiro–Wilk and Levene checks, one-way ANOVA and Kruskal–Wallis (used as the robust test when normality or equal variances fail) to compare scenarios, Tukey HSD for pairs, and, because scenarios share seeds, paired t-tests and Wilcoxon signed-rank tests on seed-matched differences for direct two-scenario comparisons. A replication check reports the largest relative CI half-width per KPI to confirm that 30 replications give narrow enough intervals.
 
@@ -255,11 +275,14 @@ PV + import + discharge + lost load = demand + export + charge + curtailment
 
 **Open decisions**
 
-- [x] Final research questions: pricing, relative savings, resilience (v0.4 proposal; demand response as an extension)
-- [x] Rerun the experiments with the v0.4 model (`python -m experiments.run_all`)
+- [x] Final research questions: RQ1 pricing mechanisms, RQ2 relative savings, RQ3 flexibility, RQ4 resilience
+- [x] Tariff values: ERSE simple tariff as the base, bi-hourly as a sensitivity scenario; export 0.05 €/kWh
+- [x] Participation threshold: 0 € as the base (free entry and exit); 2 / 5 € as a nuisance cost
+- [x] Community battery: stores energy only; members pay for its energy when used, and that money goes to the prosumers who filled it
+- [x] Rerun the experiments with the merged model (`python -m experiments.run_all`)
 - [ ] Justify the temperature sensitivity (2% per degree-day) with a source
-- [ ] Exact tariff values and whether to use time-of-use pricing
-- [ ] Justify the participation threshold and *p\_leave* / *p\_join* (e.g. real Portuguese energy-community fees); add them to the sensitivity analysis
+- [ ] Justify *p\_leave* / *p\_join*; add them to the sensitivity analysis
+- [ ] Battery investment cost (currently none)
 - [ ] Outage reserve for the community battery (minimum SoC) as a resilience policy
 
 **References**
@@ -269,5 +292,8 @@ PV + import + discharge + lost load = demand + export + charge + curtailment
 - Long, C. et al. (2017). Peer-to-peer energy trading in a community microgrid. *IEEE PES General Meeting*.
 - ERSE (2022). Diretiva n.º 27/2022: perfis de consumo, de produção e de autoconsumo para 2023.
 - Huld, T. et al. / EU JRC. PVGIS — Photovoltaic Geographical Information System, v5.3.
+- ERSE. Regulated tariffs for low-voltage households (simple and bi-hourly), new time periods from 2027, and average bill estimates (press release).
+- APREN. OMIE wholesale price statistics, January–October 2025.
+- Commercial terms of Portuguese energy-community and buy-back offers: Iberdrola, Greenvolt, HEN, Repsol (websites).
 
 *Citations are approximate and should be checked before submission.*
