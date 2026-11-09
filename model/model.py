@@ -343,7 +343,8 @@ class Community(mesa.Model):
                 if savings[h] < self.savings_threshold - 1e-6 and self.random.random() < self.p_leave:
                     h.is_member = False
                     self.leaves += 1
-            elif reference[h.is_prosumer] > self.savings_threshold and self.random.random() < self.p_join:
+            # same 1e-6 EUR tolerance as for leaving, so float noise around 0 EUR is not a "saving"
+            elif reference[h.is_prosumer] > self.savings_threshold + 1e-6 and self.random.random() < self.p_join:
                 h.is_member = True
                 self.joins += 1
         for h in hh:
