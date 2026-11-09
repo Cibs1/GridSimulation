@@ -1,11 +1,11 @@
-# Como correr a simulação (versão v0.4)
+# Como correr a simulação (versão v0.5)
 
 Há **duas formas** de correr isto:
 
 | | O quê | Como | Demora |
 |---|---|---|---|
 | **1** | **Simulação visual** no browser | duplo clique em `correr_visual.bat` | abre em segundos |
-| **2** | **Experiências completas** (todas, 30 sementes cada) + estatística + figuras | duplo clique em `correr_experiencias.bat` | ~15–20 min |
+| **2** | **Experiências completas** (todas, 30 sementes cada) + estatística + figuras | duplo clique em `correr_experiencias.bat` | ~30 min |
 
 Os dois `.bat` estão na pasta `projeto_v1` e usam o ambiente Python `.venv` que já está criado.
 
@@ -63,12 +63,20 @@ Duplo clique em **`correr_experiencias.bat`**. Faz duas coisas, por esta ordem:
 
 | Experiência | Pergunta | Cenários |
 |---|---|---|
-| `e1_pricing` | RQ1 melhor regra de preços; RQ2 poupança vs % de PV | 6 regras × PV 20/40/60/80 %, com entradas/saídas |
+Perguntas de investigação: **RQ1** comparação dos mecanismos de preços, **RQ2** poupança relativa,
+**RQ3** flexibilidade, **RQ4** resiliência.
+
+| Experiência | Pergunta | Cenários |
+|---|---|---|
+| `e1_pricing` | RQ1 mecanismos de preços (e RQ2 poupança vs % de PV) | 6 regras × PV 0/20/40/60/80/100 %, com entradas/saídas |
 | `e1b_membership_threshold` | RQ1 robustez | 6 regras × poupança mínima 0/2/5 € |
+| `e1c_pv_value` | RQ2 poupança e valor dos painéis | PV 0–100 % × comunidade com/sem bateria comunitária |
 | `e2_storage` | RQ2 poupança com baterias | nenhuma / individual / comunitária × 50/100/200 kWh |
-| `e3_demand_response` | extra: flexibilidade | mid-market / SDR / dynamic × flexibilidade 0/0.1/0.2 |
-| `e4_resilience` | RQ3 resiliência | 3 regimes de falhas × 3 armazenamentos × 20/30/50 casas |
-| `e5_sensitivity` | robustez | cooperação, eficiência da bateria, preço de venda, temperatura |
+| `e2b_storage_pricing` | RQ1 × RQ2 preços com bateria | 5 regras, cada uma com bateria comunitária de 100 kWh |
+| `e3_demand_response` | RQ3 flexibilidade | mid-market / SDR / dynamic × flexibilidade 0/0.1/0.2 |
+| `e4_resilience` | RQ4 resiliência | 3 regimes de falhas × 3 armazenamentos × 20/30/50 casas |
+| `e5_sensitivity` | robustez | cooperação, eficiência, preço de venda, regra da bateria, tarifa bi-horária, flexibilidade, temperatura |
+| `e6_weather_temperature` | o tempo e a temperatura contam? | 10 anos de tempo × efeito da temperatura ligado/desligado |
 
 ### Opções extra (no terminal, dentro de `projeto_v1`)
 
@@ -92,8 +100,10 @@ Os cenários estão em **`experiments/designs.py`**. Cada experiência é uma fu
 | `storage_mode`, `storage_kwh` | `"none"`, 0 | armazenamento e total de kWh |
 | `flexibility` | 0 | flexibilidade (demand response) |
 | `cooperation` | 1.0 | probabilidade de oferecer o excedente à comunidade |
-| `membership`, `initial_member_share`, `savings_threshold` | False, 1.0, 0 | entradas/saídas |
-| `import_price`, `export_price` | 0.20, 0.05 | preços da rede (€/kWh, provisórios) |
+| `membership`, `initial_member_share`, `savings_threshold` | False, 1.0, 0 | entradas/saídas (limiar 0 €: entrar e sair é grátis nas comunidades reais) |
+| `tariff` | `"simple"` | tarifa da rede: `"simple"` (ERSE 0,1711 €/kWh) ou `"bi_hourly"` (0,1143 vazio / 0,2045 fora de vazio) |
+| `export_price` | 0.05 | preço de venda do excedente à rede (€/kWh) |
+| `battery_income` | `"prosumers"` | quem recebe o dinheiro da bateria comunitária: quem a encheu, ou a comunidade (`"unallocated"`) |
 | `outage_rate`, `outage_duration` | 4, (1, 8) | falhas por ano e duração (h) |
 | `weather_year` | None | `None` = sorteado; ou um ano 2014–2023 |
 | `heat_sensitivity`, `cool_sensitivity` | 0.02 | efeito da temperatura no consumo |
@@ -120,8 +130,8 @@ Depois: `correr_experiencias.bat tamanho`.
 .venv\Scripts\python.exe -m pytest
 ```
 
-Corre 37 testes (balanço de energia em todas as horas, poupança = redução da fatura da rede,
-reprodutibilidade, baterias, falhas, temperatura, anos de tempo...). Demora ~2,5 min.
+Corre 50 testes (balanço de energia em todas as horas, poupança = redução da fatura da rede,
+reprodutibilidade, baterias, falhas, temperatura, anos de tempo...). Demora ~4 min.
 
 ---
 
@@ -172,7 +182,7 @@ projeto_v1/
 │
 ├── tests/test_model.py        os 37 testes de verificação
 └── docs/
-    ├── ODD.md                 documentação completa do modelo (protocolo ODD, v0.4)
+    ├── ODD.md                 documentação completa do modelo (protocolo ODD, v0.5)
     └── PROJECT_CONTEXT.md     contexto do projeto escrito pelo colega
 ```
 

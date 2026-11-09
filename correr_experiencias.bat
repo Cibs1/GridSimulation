@@ -1,7 +1,7 @@
 @echo off
 rem Experiencias completas: corre todas as experiencias (30 sementes cada) e refaz
 rem as estatisticas e figuras. Resultados: experiments\results\*.csv
-rem Figuras: notebooks\figures\*.png   (demora ~15-20 min)
+rem Figuras: notebooks\figures\*.png   (demora ~30 min)
 rem Opcoes extra (ver COMO_CORRER.md), por exemplo:
 rem     correr_experiencias.bat e1_pricing e4_resilience
 rem     correr_experiencias.bat --workers 6
