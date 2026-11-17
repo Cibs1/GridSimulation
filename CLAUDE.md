@@ -57,7 +57,7 @@ docs/ODD.md          model documentation
 - Per-step order: environment update → membership (every 30 days) → demand response → self-consumption (PV, then home battery) → local market + pricing → community battery → grid exchange + settlement.
 - Pricing mechanisms: no community (reference), fixed, mid-market, supply–demand ratio (SDR, Liu et al. 2017), dynamic, bill-sharing (Long et al. 2017).
 - KPIs: community savings, relative savings (community savings / sum of reference bills), self-sufficiency, self-consumption, peak import, fairness (Gini of savings), resilience (share served during outages, lost load).
-- Experiments: E1, E1b, E1c, E2, E2b, E3, E4, E5, E6 (weather year x temperature on/off); 30 seeds per scenario, mean ± 95% CI, ANOVA/Kruskal–Wallis + Tukey, paired tests, Friedman (E6).
+- Experiments: E1, E1b, E1c, E2, E2b, E3, E4, E5, E6 (weather year x temperature on/off); 30 seeds per scenario, mean ± 95% CI. Scenarios share seeds, so tests are for repeated measures: Friedman + repeated-measures ANOVA (Greenhouse-Geisser) across scenarios, paired t / Wilcoxon with Holm's correction for pairs, effect sizes; differences equal by construction are flagged, not tested (Nov 17). Do not use one-way ANOVA / Kruskal-Wallis / Tukey (they assume independent groups).
 
 ## Terminology
 - **Lost load** = demand not met (deficit with no source). **Curtailment** = surplus wasted (can't be used, stored or exported). They are different things.

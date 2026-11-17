@@ -97,7 +97,7 @@ RQ3 flexibility, RQ4 resilience.
 
 Scenarios share the same 30 seeds (same households, weather and outages), so
 they can be compared with paired tests. Statistics live in `experiments/stats.py`
-(95% CI, Shapiro, Levene, ANOVA, Kruskal-Wallis, Tukey HSD, paired t / Wilcoxon).
+(95% CI; because scenarios share seeds, repeated-measures tests: Friedman, repeated-measures ANOVA with Greenhouse-Geisser correction, paired t / Wilcoxon with Holm's correction, effect sizes).
 
 ## Input data
 

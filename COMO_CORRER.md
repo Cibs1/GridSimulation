@@ -57,8 +57,8 @@ Duplo clique em **`correr_experiencias.bat`**. Faz duas coisas, por esta ordem:
 
 1. Corre **todas as experiências** de `experiments/designs.py` (30 sementes cada) e grava os
    resultados em `experiments/results/<experiência>.csv` (uma linha por cenário × semente).
-2. Corre o notebook `notebooks/02_experiments.ipynb`: testes estatísticos (ANOVA, Kruskal-Wallis,
-   Tukey, testes emparelhados) e **figuras** em `notebooks/figures/*.png`.
+2. Corre o notebook `notebooks/02_experiments.ipynb`: testes estatísticos para amostras emparelhadas
+   (Friedman, ANOVA de medidas repetidas, testes emparelhados com correção de Holm) e **figuras** em `notebooks/figures/*.png`.
    Para ver as tabelas, abrir o notebook (VS Code abre `.ipynb` diretamente).
 
 | Experiência | Pergunta | Cenários |
@@ -172,7 +172,7 @@ projeto_v1/
 │   ├── designs.py             definição dos cenários de cada experiência (E1–E5)
 │   ├── run_experiments.py     corre cenários × 30 sementes em paralelo -> results/*.csv
 │   ├── run_all.py             FORMA 2 por dentro: run_experiments + notebook das figuras
-│   ├── stats.py               funções de estatística (intervalos de confiança, ANOVA, Tukey, ...)
+│   ├── stats.py               funções de estatística (intervalos de confiança, Friedman, ANOVA de medidas repetidas, Holm, ...)
 │   └── results/               resultados (um CSV por experiência)
 │
 ├── notebooks/
